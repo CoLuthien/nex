@@ -49,9 +49,8 @@ buffer::make_view(std::size_t offset_bytes, std::size_t size_bytes)
     // offsets are added up once, here, and a reader walks one indirection whatever it came from.
     if (auto* window = dynamic_cast<view*>(this); window != nullptr)
     {
-        return std::make_shared<view>(window->source(),
-                                      window->offset() + offset_bytes,
-                                      size_bytes);
+        return std::make_shared<view>(
+            window->source(), window->offset() + offset_bytes, size_bytes);
     }
 
     return std::make_shared<view>(shared_from_this(), offset_bytes, size_bytes);

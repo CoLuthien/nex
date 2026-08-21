@@ -423,11 +423,10 @@ encoded::reshape(nex::layout layout, bool compaction)
 
         // Unbounded means the axis had no known extent to describe in the first place, so there is
         // no prefix of these parameters to speak of either.
-        auto const channels = bounded ? static_cast<std::size_t>(capacity[axis]) : 0;
-        auto const narrowable =
-            bounded and describes_channels(m_initial_quant->scale, channels) and
-            (not m_initial_quant->zero_point or
-             describes_channels(m_initial_quant->zero_point, channels));
+        auto const channels   = bounded ? static_cast<std::size_t>(capacity[axis]) : 0;
+        auto const narrowable = bounded and describes_channels(m_initial_quant->scale, channels) and
+                                (not m_initial_quant->zero_point or
+                                 describes_channels(m_initial_quant->zero_point, channels));
 
         if (narrowable)
         {
@@ -444,13 +443,14 @@ encoded::reshape(nex::layout layout, bool compaction)
         }
         else
         {
-            spdlog::warn("[encoded::reshape] '{}' is quantized per channel along axis {}, which the "
-                         "new shape takes from {} to {}, but its scale/zero_point do not describe "
-                         "the extent the region was built with; they are passed on as they are",
-                         m_format.name,
-                         axis,
-                         current[axis],
-                         target[axis]);
+            spdlog::warn(
+                "[encoded::reshape] '{}' is quantized per channel along axis {}, which the "
+                "new shape takes from {} to {}, but its scale/zero_point do not describe "
+                "the extent the region was built with; they are passed on as they are",
+                m_format.name,
+                axis,
+                current[axis],
+                target[axis]);
         }
     }
 

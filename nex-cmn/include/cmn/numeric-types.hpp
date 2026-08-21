@@ -203,7 +203,8 @@ static constexpr bool is_half_precision_v = std::is_same_v<f16, T> //
  *        half-precision and unsigned fixed-point types this module carries as byte-wise structs.
  */
 template <typename T>
-concept number = std::integral<T> or std::floating_point<T> or one_of<T, f16, bf16, uf8, uf16, uf32>;
+concept number =
+    std::integral<T> or std::floating_point<T> or one_of<T, f16, bf16, uf8, uf16, uf32>;
 
 static_assert(sizeof(f16) == sizeof(std::uint16_t));
 static_assert(sizeof(bf16) == sizeof(std::uint16_t));

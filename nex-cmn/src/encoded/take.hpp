@@ -29,8 +29,8 @@ namespace nex::detail
  * @throws std::out_of_range if [from[d], to[d]) is not a sub-range of dimension d, or if the
  *         resulting displacement falls outside @p buffer.
  */
-encoded::slice take(encoded::format const&        parent,
-                    buffer::shared const&         buffer,
+encoded::slice take(encoded::format const&         parent,
+                    buffer::shared const&          buffer,
                     layout::shape_container const& from,
                     layout::shape_container const& to);
 
