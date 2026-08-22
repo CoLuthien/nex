@@ -1,0 +1,108 @@
+# RMSNorm 하드웨어 테스트
+
+NPU가 달린 장비에서 **이 저장소가 만든 명령 스트림이 실제로 도는지, 그리고 결과가 맞는지**
+확인한다. 스트림을 파일에서 읽지 않고 `amd::programs::rmsnorm` 이 그 자리에서 만든다 —
+런타임이 쓰는 바로 그 코드다.
+
+개발 머신에는 NPU가 없어서 지금까지는 aiecc 가 만든 스트림과 **바이트가 같다**는 것만
+확인했다. 바이트가 같다는 것과 하드웨어가 받아들인다는 것은 다른 얘기고, 이게 그 차이를
+메우는 부분이다.
+
+## 무엇을 검증하나
+
+| | |
+|---|---|
+| 명령 스트림 | 우리 emitter 가 만든 것이 aiecc 것과 같은지 (실행 전에 먼저 비교) |
+| aiebu → ELF | transaction blob 이 ELF 로 조립되는지 |
+| XRT 적재 | `register_xclbin` → `hw_context` → `xrt::elf` → `module` → `ext::kernel` 경로 |
+| 실행 | `kernel(3, 0, 0, bo...)` 가 완료 상태로 돌아오는지 |
+| **수치** | 결과가 CPU 레퍼런스와 맞는지 (상대 4%, 절대 1e-6 — IRON 테스트와 같은 허용치) |
+| 지연 | 반복 실행 평균 (선택) |
+
+## 빌드
+
+XRT 말고는 의존성이 없다. protobuf 도 onnx 도 필요 없다.
+
+### Windows
+
+Ryzen AI 소프트웨어 또는 NPU 드라이버 패키지의 XRT 가 필요하다.
+
+```powershell
+cmake -S . -B build -DXRT_DIR="C:/path/to/xrt"
+cmake --build build --config Release
+.\build\Release\rmsnorm-hwtest.exe artifacts
+```
+
+`XILINX_XRT` 환경변수가 잡혀 있으면 `-DXRT_DIR` 은 생략해도 된다.
+
+### Linux
+
+```bash
+cmake -S . -B build -DXRT_DIR=/opt/xilinx/xrt
+cmake --build build -j
+./build/rmsnorm-hwtest artifacts
+```
+
+두 번째 인자는 반복 횟수 (기본 100, `0` 이면 지연 측정 생략).
+
+### 건식 실행 (NPU 없이)
+
+```
+rmsnorm-hwtest artifacts 0 --dry
+```
+
+디바이스를 열지 않고 **스트림 생성과 aiecc 대조까지만** 한다. 아티팩트가 성했는지,
+emitter 가 기대대로 도는지를 하드웨어 없이 먼저 볼 수 있다. 개발 머신에서 확인한 결과:
+
+```
+=== rmsnorm_sz2048_c1_ch1_w1
+  설계: columns=1 channels=1 weighted=yes, 원소 2048개
+  명령 스트림: 105 워드 (420 바이트)
+  aiecc 스트림과 바이트 일치
+...
+3개 중 3개 통과
+```
+
+## 아티팩트
+
+`artifacts/` 에 케이스마다 다음이 들어 있다.
+
+| 파일 | 내용 |
+|---|---|
+| `*.xclbin` | IRON/aiecc 가 구운 것. 설계 기술자가 `USER_METADATA` 섹션에 들어 있다 |
+| `*.input.bin` | 입력 (bf16, little endian) |
+| `*.weight.bin` | 가중치 (weighted 케이스만) |
+| `*.golden.bin` | CPU 레퍼런스 결과 |
+| `*.aiecc.bin` | aiecc 가 만든 명령 스트림. 우리 것과 대조하는 용도 |
+| `*.design.json` | xclbin 에 심은 것과 같은 내용 (사람이 읽으라고 옆에도 둠) |
+
+케이스 세 개 모두 **배치까지 유도되는 조합**이다 — 즉 설계 기술자의 네 숫자만으로
+스트림 전체가 나온다.
+
+| 케이스 | 정규화 형태 | 컬럼 | 가중치 |
+|---|---|---:|---|
+| `rmsnorm_sz2048_c1_ch1_w1` | 2048짜리 벡터 1개 | 1 | 있음 |
+| `rmsnorm_sz2048_c8_ch1_w0` | 256짜리 벡터 8개 | 8 | 없음 |
+| `rmsnorm_sz4096_c4_ch1_w0` | 1024짜리 벡터 4개 | 4 | 없음 |
+
+## 결과를 어떻게 읽나
+
+- **"aiecc 스트림과 바이트 일치"가 안 나오면** emitter 문제다. 하드웨어까지 갈 것도 없다.
+- **적재에서 실패하면** XRT/드라이버 버전 문제일 가능성이 높다.
+  `register_xclbin` + `hw_context` 2단계가 NPU shim 에서 필수인데, `load_xclbin` 은 동작하지 않는다.
+- **실행은 되는데 수치가 틀리면** 서술자는 맞고 해석이 틀린 것이다.
+  오차가 난 첫 원소 번호를 같이 찍으니, 그게 어느 코어의 slice 인지 보면 범위가 좁혀진다.
+- **`state`** 는 XRT 의 `ert_cmd_state` 다. 4 = COMPLETED.
+
+## 알려진 것 / 확실하지 않은 것
+
+- **실행 검증은 이 테스트가 처음이다.** 개발 머신에는 NPU 가 없어 건식 실행까지만 확인했다.
+- **커널 인자를 다 채우지 않는다.** xclbin 메타데이터는 `bo0..bo4` 5개를 선언하는데
+  (aiecc 가 고정 개수로 패딩한다) 설계가 실제로 쓰는 것은 2~3개다. 여기서는 쓰는 만큼만
+  넘긴다. XRT 가 나머지를 요구하면 여기서 실패할 텐데, 그러면 그것 자체가 알아야 할 사실이다.
+- `command.hpp` 가 `<xrt/xrt_hw_context.h>` 를 include 하지만 실제로 쓰지는 않는다.
+  덕분에 emitter 는 XRT 없이도 빌드된다 (여기서는 어차피 링크하므로 무해).
+- Windows 의 XRT 라이브러리 이름이 `xrt_coreutil` 이 아닐 수 있다. `find_library` 가 실패하면
+  `-DXRT_DIR` 아래 `lib/` 를 확인하고 CMakeLists 의 `NAMES` 를 맞춰야 한다.
+- aiebu 가 별도 라이브러리가 아니라 XRT 본체에 들어가 있는 배포도 있다. 그때는
+  `find_library(AIEBU_LIB ...)` 를 지우고 `xrt_coreutil` 만 링크하면 된다.
