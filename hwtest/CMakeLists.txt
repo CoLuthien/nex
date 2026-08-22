@@ -3,6 +3,9 @@
 cmake_minimum_required(VERSION 3.22)
 project(rmsnorm-hwtest LANGUAGES CXX)
 
+include(../cmake/sdk/FindXRT.cmake)
+include(../cmake/sdk/FindAIEBU.cmake)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -34,11 +37,9 @@ add_executable(rmsnorm-hwtest
 
 target_include_directories(rmsnorm-hwtest PRIVATE ${NEX_SRC} "${XRT_DIR}/include")
 
-find_library(XRT_COREUTIL NAMES xrt_coreutil PATHS "${XRT_DIR}/lib" REQUIRED)
-find_library(AIEBU_LIB    NAMES aiebu        PATHS "${XRT_DIR}/lib" REQUIRED)
 
-target_link_libraries(rmsnorm-hwtest PRIVATE ${XRT_COREUTIL} ${AIEBU_LIB})
+target_link_libraries(rmsnorm-hwtest PRIVATE xrt::xrt aiebu::aiebu)
 
 if(MSVC)
-    target_compile_options(rmsnorm-hwtest PRIVATE /Zc:preprocessor /utf-8 /EHsc)
+    target_compile_options(rmsnorm-hwtest PRIVATE /Zc:preprocessor /utf-8 /EHsc /MT)
 endif()
