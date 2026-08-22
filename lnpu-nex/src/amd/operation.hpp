@@ -66,7 +66,7 @@ public:
     template <typename... Args>
     std::error_code execute(Args... args)
     {
-        auto run   = m_kernel->operator()(3, 0, 0, args.bo()...);
+        auto run   = m_kernel->operator()(3, 0, 0, args...);
         auto state = run.wait();
 
         // TODO Error handling and logs;

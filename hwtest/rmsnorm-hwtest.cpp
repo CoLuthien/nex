@@ -8,6 +8,7 @@
 // Everything the emitter needs is in a handful of headers with no XRT in them, so this builds
 // against XRT alone -- no protobuf, no onnx, none of the rest of the tree.
 
+#include "amd/device.hpp"
 #include "amd/programs/rmsnorm.hpp"
 
 #include <xrt/xrt_bo.h>
@@ -173,10 +174,11 @@ compare(std::span<std::uint16_t const> got,
 /// Everything a case needs, and everything building it produced.
 struct case_inputs
 {
-    xrt::xclbin       binary;
-    command_list      sequence{npu::npu2, 8};
-    std::vector<char> input, weight, golden;
-    bool              weighted{};
+    xrt::xclbin                        binary;
+    command_list                       sequence{npu::npu2, 8};
+    std::shared_ptr<programs::rmsnorm> program;
+    std::vector<char>                  input, weight, golden;
+    bool                               weighted{};
 };
 
 /// The half that needs no device: build the stream and check it against what aiecc produced.
@@ -224,9 +226,9 @@ build_case(fs::path const& dir, std::string const& name, case_inputs& built)
     param.weight                   = {.argument_index = 1};
     param.output                   = {.argument_index = weighted ? 2U : 1U};
 
-    programs::rmsnorm const emitter{std::move(param)};
+    built.program = std::make_shared<programs::rmsnorm>(std::move(param));
 
-    if (auto const failure = emitter.wire(built.sequence))
+    if (auto const failure = built.program->wire(built.sequence))
     {
         std::printf("  wire 실패: %s\n", failure.message().c_str());
         return false;
@@ -436,6 +438,70 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
             }
             break;
         }
+    }
+
+    // The same work, driven through the classes the runtime is built out of rather than through
+    // XRT directly. operation already assembles an ELF from a command_list at run time; this is
+    // only calling it. Whether it comes back is the question -- the path it takes is the one XRT
+    // refused above, and confirming that from inside our own plumbing is the point.
+    std::printf("  -- amd::device / amd::operation 경로\n");
+    try
+    {
+        // Fully qualified: 'device' alone would be the xrt::device parameter here.
+        lnpu::nex::amd::device owner{0};
+
+        if (auto const failure = owner.load_op("rmsnorm", xrt::xclbin{binary}))
+        {
+            std::printf("     load_op 실패: %s\n", failure.message().c_str());
+        }
+        else if (auto* const loaded = owner.op("rmsnorm"); loaded == nullptr)
+        {
+            std::printf("     op() 가 null 을 돌려줌\n");
+        }
+        else
+        {
+            auto again = std::make_unique<command_list>(npu::npu2, 8);
+            if (built.program->wire(*again)) throw std::runtime_error("wire failed");
+
+            auto running = loaded->create_instance(std::move(again));
+
+            auto in_bo =
+                xrt::bo{device, input.size(), xrt::bo::flags::host_only, xrt::memory_group{0}};
+            auto out_bo =
+                xrt::bo{device, golden.size(), xrt::bo::flags::host_only, xrt::memory_group{0}};
+            auto w_bo = xrt::bo{device,
+                                weighted ? weight.size() : std::size_t{4},
+                                xrt::bo::flags::host_only,
+                                xrt::memory_group{0}};
+
+            std::memcpy(in_bo.map(), input.data(), input.size());
+            std::memset(out_bo.map(), 0, golden.size());
+            if (weighted) std::memcpy(w_bo.map(), weight.data(), weight.size());
+            in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            if (weighted) w_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+
+            auto const refused =
+                weighted ? running->execute(in_bo, w_bo, out_bo) : running->execute(in_bo, out_bo);
+
+            out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+
+            auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()),
+                                        golden.size() / sizeof(std::uint16_t)};
+            auto const want = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()),
+                                        golden.size() / sizeof(std::uint16_t)};
+            auto const off  = compare(got, want, 0.04F, 1e-6F);
+
+            std::printf("     execute → %s, 최대 상대오차 %.4g, 허용 밖 %zu / %zu\n",
+                        refused ? refused.message().c_str() : "ok",
+                        static_cast<double>(off.worst_rel),
+                        off.outside,
+                        want.size());
+        }
+    }
+    catch (std::exception const& failure)
+    {
+        std::printf("     예외: %s\n", failure.what());
     }
 
     std::printf("  %s\n", ok ? "통과" : "실패");

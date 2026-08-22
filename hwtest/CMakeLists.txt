@@ -33,9 +33,17 @@ add_executable(rmsnorm-hwtest
     ${NEX_SRC}/amd/commands/queue-push.cpp
     ${NEX_SRC}/amd/commands/tct-wait.cpp
     ${NEX_SRC}/amd/programs/rmsnorm.cpp
+
+    ${NEX_SRC}/amd/device.cpp
+    ${NEX_SRC}/amd/operation.cpp
+    ${NEX_SRC}/amd/operation-registry.cpp
 )
 
-target_include_directories(rmsnorm-hwtest PRIVATE ${NEX_SRC} "${XRT_DIR}/include")
+target_include_directories(rmsnorm-hwtest PRIVATE
+    ${NEX_SRC}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../lnpu-cmn/include"  # operation-registry 가 cmn/containers 를 쓴다
+    "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty"        # 그리고 spdlog
+    "${XRT_DIR}/include")
 
 
 target_link_libraries(rmsnorm-hwtest PRIVATE xrt::xrt aiebu::aiebu)
