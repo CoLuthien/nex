@@ -328,9 +328,11 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
     std::memcpy(insts_bo.map(), stream.data(), stream_bytes);
     insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-    // How the data buffers are made is the remaining unknown. The legacy flow runs, but the
-    // results come back untouched, and a buffer the device cannot reach would look exactly like
-    // that. Both ways are tried in one go rather than one per trip to the hardware.
+    // Plain xrt::bo, deliberately. Handing an xrt::ext::bo to the variadic kernel call is what
+    // produced "patch_value() only supports 64-bit values or less" here: older XRT has no
+    // set_arg overload for xrt::bo subclasses, so the generic one takes them as scalars and tries
+    // to patch sizeof(xrt::ext::bo) == 16 bytes as an argument value. Newer headers carry an
+    // overload that catches it; the driver stack this runs against does not.
     struct allocator
     {
         char const*                         what;
@@ -342,10 +344,6 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
          [&](std::size_t size) {
              return xrt::bo{device, size, xrt::bo::flags::host_only, xrt::memory_group{0}};
          }},
-        {"xrt::ext::bo(device)",
-         [&](std::size_t size) { return xrt::bo{xrt::ext::bo{device, size}}; }},
-        {"xrt::ext::bo(hw_context)",
-         [&](std::size_t size) { return xrt::bo{xrt::ext::bo{context, size}}; }},
     };
 
     constexpr std::uint64_t kStartNpu = 3;
