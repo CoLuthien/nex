@@ -162,6 +162,10 @@ public:
     nx_network::contents read(onnx_source const& source);
 
 private:
+    /// A bare value carrying whatever the encodings file says about @p name, for the values the
+    /// graph mentions but never describes.
+    value_description described_by_encoding(std::string const& name) const;
+
     /// The position of @p described in the value table, adding it when it is new and filling in
     /// what an earlier mention of the same name did not know.
     std::size_t remember(value_description&& described);
@@ -214,6 +218,17 @@ graph_reader::read(onnx_source const& source)
     collect_layers(model);
 
     return std::move(m_parts);
+}
+
+value_description
+graph_reader::described_by_encoding(std::string const& name) const
+{
+    auto const found = m_encodings.find(name);
+
+    return value_description{
+        .name  = name,
+        .quant = found == m_encodings.end() ? std::nullopt : std::optional{found->second},
+    };
 }
 
 std::size_t
@@ -279,15 +294,18 @@ graph_reader::collect_values(::onnx::GraphProto const& graph)
         });
     }
 
-    // What is left are the edges between layers. Nothing is known about them until shape
-    // inference runs, but they still have to exist for a layer to be able to point at them.
+    // What is left are the edges between layers. Their shape is unknown until inference runs, but
+    // they still have to exist for a layer to be able to point at them -- and an encodings file
+    // names them whether or not the graph bothered to. A decode-shaped export ships with no
+    // value_info at all, so this is where nearly every activation gets its quantization; taking
+    // it only from the value_info list would silently leave that export unquantized.
     for (auto const& node : graph.node())
     {
         for (auto const& name : node.input())
         {
             if (not name.empty())
             {
-                remember(value_description{.name = name});
+                remember(described_by_encoding(name));
             }
         }
 
@@ -295,7 +313,7 @@ graph_reader::collect_values(::onnx::GraphProto const& graph)
         {
             if (not name.empty())
             {
-                remember(value_description{.name = name});
+                remember(described_by_encoding(name));
             }
         }
     }
