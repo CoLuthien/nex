@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <stdexcept>
 #include <memory>
@@ -250,6 +251,36 @@ build_case(fs::path const& dir, std::string const& name, case_inputs& built)
     return true;
 }
 
+/// Names each step so a failure says which call threw rather than only what it said.
+template <typename F>
+auto
+step(char const* what, F&& body) -> decltype(body())
+{
+    std::printf("  .. %s\n", what);
+    std::fflush(stdout);
+    return body();
+}
+
+void
+describe_signature(xrt::xclbin const& binary, std::string const& kernel)
+{
+    for (auto const& one : binary.get_kernels())
+    {
+        if (one.get_name() != kernel) continue;
+
+        std::printf("  커널 인자 %zu개:\n", one.get_num_args());
+        for (auto const& arg : one.get_args())
+        {
+            std::printf("    [%d] %-8s size=%zu offset=%zu host_type=%s\n",
+                        arg.get_index(),
+                        arg.get_name().c_str(),
+                        arg.get_size(),
+                        arg.get_offset(),
+                        arg.get_host_type().c_str());
+        }
+    }
+}
+
 /// The half that needs the NPU.
 bool
 run_case(xrt::device& device, case_inputs const& built, int repeats)
@@ -261,44 +292,82 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
     auto const& weight   = built.weight;
     auto const& golden   = built.golden;
 
-    auto const      uuid = device.register_xclbin(binary);
-    xrt::hw_context context{device, uuid};
+    auto const name = kernel_named(binary);
+    describe_signature(binary, name);
 
-    auto const  elf_bytes = assemble(stream);
-    xrt::elf    executable{elf_bytes.data(), elf_bytes.size()};
-    xrt::module module{executable};
+    auto const uuid    = step("register_xclbin", [&] { return device.register_xclbin(binary); });
+    auto       context = step("hw_context", [&] { return xrt::hw_context{device, uuid}; });
 
-    xrt::ext::kernel kernel{context, module, kernel_named(binary)};
+    auto const elf_bytes = step("aiebu -> elf", [&] { return assemble(stream); });
+    auto       executable =
+        step("xrt::elf", [&] { return xrt::elf{elf_bytes.data(), elf_bytes.size()}; });
+    auto module = step("xrt::module", [&] { return xrt::module{executable}; });
+    auto kernel = step("xrt::ext::kernel", [&] { return xrt::ext::kernel{context, module, name}; });
 
-    // ---- 버퍼
-    auto make_bo = [&](std::size_t size) { return xrt::ext::bo{device, size}; };
+    auto in_bo  = step("bo(input)", [&] { return xrt::ext::bo{device, input.size()}; });
+    auto out_bo = step("bo(output)", [&] { return xrt::ext::bo{device, golden.size()}; });
 
-    auto in_bo  = make_bo(input.size());
-    auto out_bo = make_bo(golden.size());
     std::memcpy(in_bo.map(), input.data(), input.size());
     std::memset(out_bo.map(), 0, golden.size());
     in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-    xrt::bo weight_bo{};
+    // A weightless design has no third buffer; xrt::ext::bo has no empty state, so the slot is
+    // filled with a one-byte buffer that is never handed to the kernel.
+    auto weight_bo = step("bo(weight)", [&] {
+        return xrt::ext::bo{device, weighted ? weight.size() : std::size_t{4}};
+    });
     if (weighted)
     {
-        weight_bo = make_bo(weight.size());
         std::memcpy(weight_bo.map(), weight.data(), weight.size());
         weight_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     }
 
-    // ---- 실행. 인자는 opcode, instr, ninstr 다음에 bo0.. 순서다 (docs/08 8.2)
+    // Two ways to hand over the arguments, because it is not settled which one an ELF-flow kernel
+    // wants. The three leading scalars are what the xclbin's signature asks for and what
+    // FastFlowLM passes, but the module already carries the instructions, so they may be the
+    // driver's business rather than ours. Whichever one runs is the answer.
     constexpr std::uint64_t kStartNpu = 3;
 
-    auto launch = [&] {
-        auto run = weighted ? kernel(kStartNpu, 0, 0, in_bo, weight_bo, out_bo)
-                            : kernel(kStartNpu, 0, 0, in_bo, out_bo);
-        return run.wait();
+    auto with_scalars = [&] {
+        return weighted ? kernel(kStartNpu, 0, 0, in_bo, weight_bo, out_bo)
+                        : kernel(kStartNpu, 0, 0, in_bo, out_bo);
+    };
+    auto buffers_only = [&] {
+        return weighted ? kernel(in_bo, weight_bo, out_bo) : kernel(in_bo, out_bo);
     };
 
-    auto const state = launch();
-    std::printf("  첫 실행 상태: %d\n", static_cast<int>(state));
+    ert_cmd_state state{};
+    bool          ran = false;
+    char const*   how = "";
+
+    for (auto const& [label, launch] :
+         {std::pair<char const*, std::function<xrt::run()>>{"(3,0,0,bo..)", with_scalars},
+          std::pair<char const*, std::function<xrt::run()>>{"(bo.. 만)", buffers_only}})
+    {
+        try
+        {
+            std::printf("  .. 실행 %s\n", label);
+            std::fflush(stdout);
+            auto run = launch();
+            state    = run.wait();
+            ran      = true;
+            how      = label;
+            break;
+        }
+        catch (std::exception const& failure)
+        {
+            std::printf("     거부: %s\n", failure.what());
+        }
+    }
+
+    if (not ran)
+    {
+        std::printf("  두 방식 모두 실패\n");
+        return false;
+    }
+
+    std::printf("  실행됨 %s, 상태 %d (4 = COMPLETED)\n", how, static_cast<int>(state));
 
     out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
 
@@ -319,7 +388,9 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
     {
         auto const started = std::chrono::steady_clock::now();
         for (int at = 0; at < repeats; ++at)
-            launch();
+        {
+            (how[1] == '3' ? with_scalars() : buffers_only()).wait();
+        }
         auto const spent =
             std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - started)
                 .count();
