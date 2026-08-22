@@ -1,9 +1,12 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-set(NEX_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+set(LNPU_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${LNPU_MODULE_PATH}/sdk")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+
+option(LNPU_WITH_AMD_NPU "With AMD NPU" OFF)
 
 project(nex
     VERSION 0.0.0
@@ -22,5 +25,5 @@ include(FetchContent)
 
 include(compile-options)
 
-add_subdirectory(nex-cmn)
-#add_subdirectory(nex-runtime)
+add_subdirectory(lnpu-cmn)
+add_subdirectory(lnpu-nex)

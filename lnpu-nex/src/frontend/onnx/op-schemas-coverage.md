@@ -1,0 +1,583 @@
+# ONNX operator coverage
+
+Written by generate-op-schemas.py together with op-schemas.gen.cpp; regenerate both
+at once and review the diff.
+
+- onnx package: 1.22.0
+- newest opset: 27
+- domains: "" (ai.onnx)
+- emitted: 561 versions over 185 operators
+- excluded: 17 operators
+
+## Excluded operators
+
+### subgraph-valued attribute (control flow)
+
+- `If` (opset 1, 11, 13, 16, 19, 21, 23, 24, 25): attribute 'else_branch' is required, attribute 'then_branch' is required
+- `Loop` (opset 1, 11, 13, 16, 19, 21, 23, 24, 25): attribute 'body' is required
+- `Scan` (opset 8, 9, 11, 16, 19, 21, 23, 24, 25): attribute 'body' is required
+- `SequenceMap` (opset 17): attribute 'body' is required
+
+### sequence / map / optional / sparse type
+
+- `ConcatFromSequence` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `Optional` (opset 15): 'O' admits only optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), and 26 more
+- `SequenceAt` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `SequenceConstruct` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `SequenceEmpty` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `SequenceErase` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `SequenceInsert` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `SequenceLength` (opset 11): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more
+- `SplitToSequence` (opset 11, 24): 'S' admits only seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), and 11 more, 'S' admits only seq(tensor(bfloat16)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), and 12 more
+
+### no representable element type
+
+- `RegexFullMatch` (opset 20): 'T1' admits only tensor(string)
+- `StringConcat` (opset 20): 'T' admits only tensor(string)
+- `StringNormalizer` (opset 10): operand 'X' is tensor(string), result 'Y' is tensor(string)
+- `StringSplit` (opset 20): 'T1' admits only tensor(string), 'T2' admits only tensor(string)
+
+## Emitted with amendments
+
+### dtypes folded onto fewer encodings
+
+- `Abs` (opset 6): T: 11 dtypes onto 7 encodings
+- `Abs` (opset 13): T: 12 dtypes onto 8 encodings
+- `Abs` (opset 1): T: 3 dtypes onto 2 encodings
+- `Acos` (opset 7): T: 3 dtypes onto 2 encodings
+- `Acos` (opset 22): T: 4 dtypes onto 3 encodings
+- `Acosh` (opset 9): T: 3 dtypes onto 2 encodings
+- `Acosh` (opset 22): T: 4 dtypes onto 3 encodings
+- `Add` (opset 14): T: 12 dtypes onto 8 encodings
+- `Add` (opset 1): T: 3 dtypes onto 2 encodings
+- `Add` (opset 6, 7): T: 7 dtypes onto 3 encodings
+- `Add` (opset 13): T: 8 dtypes onto 4 encodings
+- `AffineGrid` (opset 20): T1: 4 dtypes onto 3 encodings
+- `ArgMax` (opset 1, 11, 12): T: 11 dtypes onto 7 encodings
+- `ArgMax` (opset 13): T: 12 dtypes onto 8 encodings
+- `ArgMin` (opset 1, 11, 12): T: 11 dtypes onto 7 encodings
+- `ArgMin` (opset 13): T: 12 dtypes onto 8 encodings
+- `Asin` (opset 7): T: 3 dtypes onto 2 encodings
+- `Asin` (opset 22): T: 4 dtypes onto 3 encodings
+- `Asinh` (opset 9): T: 3 dtypes onto 2 encodings
+- `Asinh` (opset 22): T: 4 dtypes onto 3 encodings
+- `Atan` (opset 7): T: 3 dtypes onto 2 encodings
+- `Atan` (opset 22): T: 4 dtypes onto 3 encodings
+- `Atanh` (opset 9): T: 3 dtypes onto 2 encodings
+- `Atanh` (opset 22): T: 4 dtypes onto 3 encodings
+- `Attention` (opset 23, 24): T1: 4 dtypes onto 3 encodings
+- `Attention` (opset 23, 24): T2: 4 dtypes onto 3 encodings
+- `Attention` (opset 23, 24): U: 13 dtypes onto 8 encodings
+- `AveragePool` (opset 1, 7, 10, 11, 19): T: 3 dtypes onto 2 encodings
+- `AveragePool` (opset 22): T: 4 dtypes onto 3 encodings
+- `BatchNormalization` (opset 15): T1: 4 dtypes onto 3 encodings
+- `BatchNormalization` (opset 15): T2: 4 dtypes onto 3 encodings
+- `BatchNormalization` (opset 1, 6, 7, 9): T: 3 dtypes onto 2 encodings
+- `BatchNormalization` (opset 14, 15): T: 4 dtypes onto 3 encodings
+- `BatchNormalization` (opset 14): U: 4 dtypes onto 3 encodings
+- `Bernoulli` (opset 15): T1: 3 dtypes onto 2 encodings
+- `Bernoulli` (opset 22): T1: 4 dtypes onto 3 encodings
+- `Bernoulli` (opset 15, 22): T2: 13 dtypes onto 8 encodings
+- `BitCast` (opset 26): T1: 13 dtypes onto 8 encodings
+- `BitCast` (opset 26): T2: 13 dtypes onto 8 encodings
+- `BitShift` (opset 11): T: 4 dtypes onto 3 encodings
+- `BitwiseAnd` (opset 18): T: 8 dtypes onto 5 encodings
+- `BitwiseNot` (opset 18): T: 8 dtypes onto 5 encodings
+- `BitwiseOr` (opset 18): T: 8 dtypes onto 5 encodings
+- `BitwiseXor` (opset 18): T: 8 dtypes onto 5 encodings
+- `BlackmanWindow` (opset 17): T1: 2 dtypes onto 1 encodings
+- `BlackmanWindow` (opset 17): T2: 12 dtypes onto 8 encodings
+- `Cast` (opset 1, 6, 9): T1: 12 dtypes onto 7 encodings
+- `Cast` (opset 13, 19, 21, 23, 24, 25): T1: 13 dtypes onto 8 encodings
+- `Cast` (opset 1, 6, 9): T2: 12 dtypes onto 7 encodings
+- `Cast` (opset 13, 19, 21, 23, 24, 25): T2: 13 dtypes onto 8 encodings
+- `CastLike` (opset 15, 19, 21, 23, 24, 25): T1: 13 dtypes onto 8 encodings
+- `CastLike` (opset 15, 19, 21, 23, 24, 25): T2: 13 dtypes onto 8 encodings
+- `Ceil` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Ceil` (opset 13): T: 4 dtypes onto 3 encodings
+- `CenterCropPad` (opset 18): T: 13 dtypes onto 8 encodings
+- `CenterCropPad` (opset 18): Tind: 2 dtypes onto 1 encodings
+- `Clip` (opset 12): T: 11 dtypes onto 7 encodings
+- `Clip` (opset 13): T: 12 dtypes onto 8 encodings
+- `Clip` (opset 1, 6, 11): T: 3 dtypes onto 2 encodings
+- `Col2Im` (opset 18): T: 13 dtypes onto 8 encodings
+- `Compress` (opset 9, 11): T: 12 dtypes onto 7 encodings
+- `Concat` (opset 4, 11): T: 12 dtypes onto 7 encodings
+- `Concat` (opset 13): T: 13 dtypes onto 8 encodings
+- `Concat` (opset 1): T: 3 dtypes onto 2 encodings
+- `Constant` (opset 9, 11, 12): T: 12 dtypes onto 7 encodings
+- `Constant` (opset 13, 19, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Constant` (opset 1): T: 3 dtypes onto 2 encodings
+- `ConstantOfShape` (opset 9): T2: 12 dtypes onto 7 encodings
+- `ConstantOfShape` (opset 20, 21, 23, 24, 25): T2: 13 dtypes onto 8 encodings
+- `Conv` (opset 1, 11): T: 3 dtypes onto 2 encodings
+- `Conv` (opset 22): T: 4 dtypes onto 3 encodings
+- `ConvTranspose` (opset 1, 11): T: 3 dtypes onto 2 encodings
+- `ConvTranspose` (opset 22): T: 4 dtypes onto 3 encodings
+- `Cos` (opset 7): T: 3 dtypes onto 2 encodings
+- `Cos` (opset 22): T: 4 dtypes onto 3 encodings
+- `Cosh` (opset 9): T: 3 dtypes onto 2 encodings
+- `Cosh` (opset 22): T: 4 dtypes onto 3 encodings
+- `CumProd` (opset 26): T2: 2 dtypes onto 1 encodings
+- `CumProd` (opset 26): T: 8 dtypes onto 4 encodings
+- `CumSum` (opset 11, 14): T2: 2 dtypes onto 1 encodings
+- `CumSum` (opset 11): T: 6 dtypes onto 2 encodings
+- `CumSum` (opset 14): T: 8 dtypes onto 4 encodings
+- `DFT` (opset 17, 20): T1: 4 dtypes onto 3 encodings
+- `DFT` (opset 17, 20): T2: 2 dtypes onto 1 encodings
+- `DeformConv` (opset 19): T: 3 dtypes onto 2 encodings
+- `DeformConv` (opset 22): T: 4 dtypes onto 3 encodings
+- `DepthToSpace` (opset 1, 11): T: 12 dtypes onto 7 encodings
+- `DepthToSpace` (opset 13): T: 13 dtypes onto 8 encodings
+- `Det` (opset 11): T: 3 dtypes onto 2 encodings
+- `Det` (opset 22): T: 4 dtypes onto 3 encodings
+- `Div` (opset 14): T: 12 dtypes onto 8 encodings
+- `Div` (opset 1): T: 3 dtypes onto 2 encodings
+- `Div` (opset 6, 7): T: 7 dtypes onto 3 encodings
+- `Div` (opset 13): T: 8 dtypes onto 4 encodings
+- `Dropout` (opset 12, 13): T1: 3 dtypes onto 2 encodings
+- `Dropout` (opset 22): T1: 4 dtypes onto 3 encodings
+- `Dropout` (opset 1, 6, 7, 10, 12): T: 3 dtypes onto 2 encodings
+- `Dropout` (opset 13, 22): T: 4 dtypes onto 3 encodings
+- `Einsum` (opset 12): T: 11 dtypes onto 7 encodings
+- `Elu` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Elu` (opset 22): T: 4 dtypes onto 3 encodings
+- `Equal` (opset 11): T: 12 dtypes onto 7 encodings
+- `Equal` (opset 13, 19): T: 13 dtypes onto 8 encodings
+- `Equal` (opset 1, 7): T: 3 dtypes onto 2 encodings
+- `Erf` (opset 9): T: 11 dtypes onto 7 encodings
+- `Erf` (opset 13): T: 4 dtypes onto 3 encodings
+- `Exp` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Exp` (opset 13): T: 4 dtypes onto 3 encodings
+- `Expand` (opset 8): T: 12 dtypes onto 7 encodings
+- `Expand` (opset 13): T: 13 dtypes onto 8 encodings
+- `EyeLike` (opset 9): T1: 12 dtypes onto 7 encodings
+- `EyeLike` (opset 22): T1: 13 dtypes onto 8 encodings
+- `EyeLike` (opset 9): T2: 12 dtypes onto 7 encodings
+- `EyeLike` (opset 22): T2: 13 dtypes onto 8 encodings
+- `Flatten` (opset 9, 11): T: 12 dtypes onto 7 encodings
+- `Flatten` (opset 13, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Flatten` (opset 1): T: 3 dtypes onto 2 encodings
+- `Floor` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Floor` (opset 13): T: 4 dtypes onto 3 encodings
+- `GRU` (opset 1, 3, 7, 14): T: 3 dtypes onto 2 encodings
+- `GRU` (opset 22): T: 4 dtypes onto 3 encodings
+- `Gather` (opset 1, 11): T: 12 dtypes onto 7 encodings
+- `Gather` (opset 13): T: 13 dtypes onto 8 encodings
+- `Gather` (opset 1, 11, 13): Tind: 2 dtypes onto 1 encodings
+- `GatherElements` (opset 11): T: 12 dtypes onto 7 encodings
+- `GatherElements` (opset 13): T: 13 dtypes onto 8 encodings
+- `GatherElements` (opset 11, 13): Tind: 2 dtypes onto 1 encodings
+- `GatherND` (opset 11, 12): T: 12 dtypes onto 7 encodings
+- `GatherND` (opset 13): T: 13 dtypes onto 8 encodings
+- `Gelu` (opset 20): T: 4 dtypes onto 3 encodings
+- `Gemm` (opset 1, 6, 7): T: 3 dtypes onto 2 encodings
+- `Gemm` (opset 9, 11): T: 7 dtypes onto 3 encodings
+- `Gemm` (opset 13): T: 8 dtypes onto 4 encodings
+- `GlobalAveragePool` (opset 1): T: 3 dtypes onto 2 encodings
+- `GlobalAveragePool` (opset 22): T: 4 dtypes onto 3 encodings
+- `GlobalLpPool` (opset 1, 2): T: 3 dtypes onto 2 encodings
+- `GlobalLpPool` (opset 22): T: 4 dtypes onto 3 encodings
+- `GlobalMaxPool` (opset 1): T: 3 dtypes onto 2 encodings
+- `GlobalMaxPool` (opset 22): T: 4 dtypes onto 3 encodings
+- `Greater` (opset 9): T: 11 dtypes onto 7 encodings
+- `Greater` (opset 13): T: 12 dtypes onto 8 encodings
+- `Greater` (opset 1, 7): T: 3 dtypes onto 2 encodings
+- `GreaterOrEqual` (opset 12): T: 11 dtypes onto 7 encodings
+- `GreaterOrEqual` (opset 16): T: 12 dtypes onto 8 encodings
+- `GridSample` (opset 16, 20): T1: 12 dtypes onto 7 encodings
+- `GridSample` (opset 22): T1: 13 dtypes onto 8 encodings
+- `GridSample` (opset 16, 20): T2: 3 dtypes onto 2 encodings
+- `GridSample` (opset 22): T2: 4 dtypes onto 3 encodings
+- `GroupNormalization` (opset 21): T: 4 dtypes onto 3 encodings
+- `HammingWindow` (opset 17): T1: 2 dtypes onto 1 encodings
+- `HammingWindow` (opset 17): T2: 12 dtypes onto 8 encodings
+- `HannWindow` (opset 17): T1: 2 dtypes onto 1 encodings
+- `HannWindow` (opset 17): T2: 12 dtypes onto 8 encodings
+- `HardSigmoid` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `HardSigmoid` (opset 22): T: 4 dtypes onto 3 encodings
+- `HardSwish` (opset 14): T: 3 dtypes onto 2 encodings
+- `HardSwish` (opset 22): T: 4 dtypes onto 3 encodings
+- `Hardmax` (opset 1, 11): T: 3 dtypes onto 2 encodings
+- `Hardmax` (opset 13): T: 4 dtypes onto 3 encodings
+- `Identity` (opset 1): T: 12 dtypes onto 7 encodings
+- `Identity` (opset 13): T: 13 dtypes onto 8 encodings
+- `Identity` (opset 14, 16, 19, 21, 23, 24, 25): V: 13 dtypes onto 8 encodings
+- `InstanceNormalization` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `InstanceNormalization` (opset 22): T: 4 dtypes onto 3 encodings
+- `IsInf` (opset 10): T1: 2 dtypes onto 1 encodings
+- `IsInf` (opset 20): T1: 4 dtypes onto 3 encodings
+- `IsNaN` (opset 9): T1: 3 dtypes onto 2 encodings
+- `IsNaN` (opset 13, 20): T1: 4 dtypes onto 3 encodings
+- `LRN` (opset 1): T: 3 dtypes onto 2 encodings
+- `LRN` (opset 13): T: 4 dtypes onto 3 encodings
+- `LSTM` (opset 1, 7, 14): T: 3 dtypes onto 2 encodings
+- `LSTM` (opset 22): T: 4 dtypes onto 3 encodings
+- `LayerNormalization` (opset 17): T: 4 dtypes onto 3 encodings
+- `LeakyRelu` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `LeakyRelu` (opset 16): T: 4 dtypes onto 3 encodings
+- `Less` (opset 9): T: 11 dtypes onto 7 encodings
+- `Less` (opset 13): T: 12 dtypes onto 8 encodings
+- `Less` (opset 1, 7): T: 3 dtypes onto 2 encodings
+- `LessOrEqual` (opset 12): T: 11 dtypes onto 7 encodings
+- `LessOrEqual` (opset 16): T: 12 dtypes onto 8 encodings
+- `Log` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Log` (opset 13): T: 4 dtypes onto 3 encodings
+- `LogSoftmax` (opset 1, 11): T: 3 dtypes onto 2 encodings
+- `LogSoftmax` (opset 13): T: 4 dtypes onto 3 encodings
+- `LpNormalization` (opset 1): T: 3 dtypes onto 2 encodings
+- `LpNormalization` (opset 22): T: 4 dtypes onto 3 encodings
+- `LpPool` (opset 1, 2, 11, 18): T: 3 dtypes onto 2 encodings
+- `LpPool` (opset 22): T: 4 dtypes onto 3 encodings
+- `MatMul` (opset 1): T: 3 dtypes onto 2 encodings
+- `MatMul` (opset 9): T: 7 dtypes onto 3 encodings
+- `MatMul` (opset 13): T: 8 dtypes onto 4 encodings
+- `Max` (opset 12): T: 11 dtypes onto 7 encodings
+- `Max` (opset 13): T: 12 dtypes onto 8 encodings
+- `Max` (opset 1, 6, 8): T: 3 dtypes onto 2 encodings
+- `MaxPool` (opset 1, 8, 10, 11): T: 3 dtypes onto 2 encodings
+- `MaxPool` (opset 12): T: 5 dtypes onto 4 encodings
+- `MaxPool` (opset 22): T: 6 dtypes onto 5 encodings
+- `MaxRoiPool` (opset 1): T: 3 dtypes onto 2 encodings
+- `MaxRoiPool` (opset 22): T: 4 dtypes onto 3 encodings
+- `MaxUnpool` (opset 9, 11): T1: 3 dtypes onto 2 encodings
+- `MaxUnpool` (opset 22): T1: 4 dtypes onto 3 encodings
+- `Mean` (opset 1, 6, 8): T: 3 dtypes onto 2 encodings
+- `Mean` (opset 13): T: 4 dtypes onto 3 encodings
+- `MeanVarianceNormalization` (opset 9): T: 3 dtypes onto 2 encodings
+- `MeanVarianceNormalization` (opset 13): T: 4 dtypes onto 3 encodings
+- `MelWeightMatrix` (opset 17): T1: 2 dtypes onto 1 encodings
+- `MelWeightMatrix` (opset 17): T2: 4 dtypes onto 3 encodings
+- `MelWeightMatrix` (opset 17): T3: 12 dtypes onto 8 encodings
+- `Min` (opset 12): T: 11 dtypes onto 7 encodings
+- `Min` (opset 13): T: 12 dtypes onto 8 encodings
+- `Min` (opset 1, 6, 8): T: 3 dtypes onto 2 encodings
+- `Mish` (opset 18): T: 3 dtypes onto 2 encodings
+- `Mish` (opset 22): T: 4 dtypes onto 3 encodings
+- `Mod` (opset 10): T: 11 dtypes onto 7 encodings
+- `Mod` (opset 13): T: 12 dtypes onto 8 encodings
+- `Mul` (opset 14): T: 12 dtypes onto 8 encodings
+- `Mul` (opset 1): T: 3 dtypes onto 2 encodings
+- `Mul` (opset 6, 7): T: 7 dtypes onto 3 encodings
+- `Mul` (opset 13): T: 8 dtypes onto 4 encodings
+- `Multinomial` (opset 7): T1: 3 dtypes onto 2 encodings
+- `Multinomial` (opset 22): T1: 4 dtypes onto 3 encodings
+- `Multinomial` (opset 7, 22): T2: 2 dtypes onto 1 encodings
+- `Neg` (opset 1): T: 3 dtypes onto 2 encodings
+- `Neg` (opset 6): T: 7 dtypes onto 5 encodings
+- `Neg` (opset 13): T: 8 dtypes onto 6 encodings
+- `NegativeLogLikelihoodLoss` (opset 12, 13): T: 3 dtypes onto 2 encodings
+- `NegativeLogLikelihoodLoss` (opset 22): T: 4 dtypes onto 3 encodings
+- `NegativeLogLikelihoodLoss` (opset 12, 13, 22): Tind: 2 dtypes onto 1 encodings
+- `NonZero` (opset 9): T: 12 dtypes onto 7 encodings
+- `NonZero` (opset 13): T: 13 dtypes onto 8 encodings
+- `OneHot` (opset 9, 11): T1: 11 dtypes onto 7 encodings
+- `OneHot` (opset 9, 11): T2: 11 dtypes onto 7 encodings
+- `OneHot` (opset 9, 11): T3: 12 dtypes onto 7 encodings
+- `OptionalGetElement` (opset 18): O: 12 dtypes onto 7 encodings
+- `OptionalGetElement` (opset 18): V: 12 dtypes onto 7 encodings
+- `OptionalHasElement` (opset 18): O: 12 dtypes onto 7 encodings
+- `PRelu` (opset 1, 6, 7): T: 3 dtypes onto 2 encodings
+- `PRelu` (opset 9): T: 7 dtypes onto 3 encodings
+- `PRelu` (opset 16): T: 8 dtypes onto 4 encodings
+- `Pad` (opset 11): T: 11 dtypes onto 7 encodings
+- `Pad` (opset 13, 18, 19, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Pad` (opset 1, 2): T: 3 dtypes onto 2 encodings
+- `Pad` (opset 18, 19, 21, 23, 24, 25): Tind: 2 dtypes onto 1 encodings
+- `Pow` (opset 12, 13): T1: 11 dtypes onto 7 encodings
+- `Pow` (opset 15): T1: 12 dtypes onto 8 encodings
+- `Pow` (opset 1, 7): T: 3 dtypes onto 2 encodings
+- `Pow` (opset 12): T: 5 dtypes onto 3 encodings
+- `Pow` (opset 13, 15): T: 6 dtypes onto 4 encodings
+- `RMSNormalization` (opset 23): T: 4 dtypes onto 3 encodings
+- `RMSNormalization` (opset 23): V: 4 dtypes onto 3 encodings
+- `RNN` (opset 1, 7, 14): T: 3 dtypes onto 2 encodings
+- `RNN` (opset 22): T: 4 dtypes onto 3 encodings
+- `RandomNormal` (opset 1): T: 3 dtypes onto 2 encodings
+- `RandomNormal` (opset 22): T: 4 dtypes onto 3 encodings
+- `RandomNormalLike` (opset 1): T1: 12 dtypes onto 7 encodings
+- `RandomNormalLike` (opset 22): T1: 13 dtypes onto 8 encodings
+- `RandomNormalLike` (opset 1): T2: 3 dtypes onto 2 encodings
+- `RandomNormalLike` (opset 22): T2: 4 dtypes onto 3 encodings
+- `RandomUniform` (opset 1): T: 3 dtypes onto 2 encodings
+- `RandomUniform` (opset 22): T: 4 dtypes onto 3 encodings
+- `RandomUniformLike` (opset 1): T1: 12 dtypes onto 7 encodings
+- `RandomUniformLike` (opset 22): T1: 13 dtypes onto 8 encodings
+- `RandomUniformLike` (opset 1): T2: 3 dtypes onto 2 encodings
+- `RandomUniformLike` (opset 22): T2: 4 dtypes onto 3 encodings
+- `Range` (opset 11): T: 5 dtypes onto 3 encodings
+- `Range` (opset 27): T: 7 dtypes onto 5 encodings
+- `Reciprocal` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Reciprocal` (opset 13): T: 4 dtypes onto 3 encodings
+- `ReduceL1` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceL1` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `ReduceL2` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceL2` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `ReduceLogSum` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceLogSum` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `ReduceLogSumExp` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceLogSumExp` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `ReduceMax` (opset 13, 18): T: 10 dtypes onto 6 encodings
+- `ReduceMax` (opset 20): T: 11 dtypes onto 6 encodings
+- `ReduceMax` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceMax` (opset 12): T: 9 dtypes onto 5 encodings
+- `ReduceMean` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceMean` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `ReduceMin` (opset 13, 18): T: 10 dtypes onto 6 encodings
+- `ReduceMin` (opset 20): T: 11 dtypes onto 6 encodings
+- `ReduceMin` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceMin` (opset 12): T: 9 dtypes onto 5 encodings
+- `ReduceProd` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceProd` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `ReduceSum` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceSum` (opset 13): T: 8 dtypes onto 4 encodings
+- `ReduceSumSquare` (opset 1, 11): T: 7 dtypes onto 3 encodings
+- `ReduceSumSquare` (opset 13, 18): T: 8 dtypes onto 4 encodings
+- `Relu` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Relu` (opset 13): T: 4 dtypes onto 3 encodings
+- `Relu` (opset 14): T: 8 dtypes onto 6 encodings
+- `Reshape` (opset 5): T: 12 dtypes onto 7 encodings
+- `Reshape` (opset 13, 14, 19, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Reshape` (opset 1): T: 3 dtypes onto 2 encodings
+- `Resize` (opset 11): T1: 12 dtypes onto 7 encodings
+- `Resize` (opset 13, 18, 19): T1: 13 dtypes onto 8 encodings
+- `Resize` (opset 11, 13, 18, 19): T2: 3 dtypes onto 2 encodings
+- `Resize` (opset 10): T: 12 dtypes onto 7 encodings
+- `ReverseSequence` (opset 10): T: 12 dtypes onto 7 encodings
+- `RoiAlign` (opset 10, 16): T1: 3 dtypes onto 2 encodings
+- `RoiAlign` (opset 22): T1: 4 dtypes onto 3 encodings
+- `Round` (opset 11): T: 3 dtypes onto 2 encodings
+- `Round` (opset 22): T: 4 dtypes onto 3 encodings
+- `STFT` (opset 17): T1: 4 dtypes onto 3 encodings
+- `STFT` (opset 17): T2: 2 dtypes onto 1 encodings
+- `Scatter` (opset 9): T: 12 dtypes onto 7 encodings
+- `Scatter` (opset 9): Tind: 2 dtypes onto 1 encodings
+- `ScatterElements` (opset 11): T: 12 dtypes onto 7 encodings
+- `ScatterElements` (opset 13, 16, 18): T: 13 dtypes onto 8 encodings
+- `ScatterElements` (opset 11, 13, 16, 18): Tind: 2 dtypes onto 1 encodings
+- `ScatterND` (opset 11): T: 12 dtypes onto 7 encodings
+- `ScatterND` (opset 13, 16, 18): T: 13 dtypes onto 8 encodings
+- `Selu` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Selu` (opset 22): T: 4 dtypes onto 3 encodings
+- `Shape` (opset 1): T: 12 dtypes onto 7 encodings
+- `Shape` (opset 13, 15, 19, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Shrink` (opset 9): T: 11 dtypes onto 7 encodings
+- `Sigmoid` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Sigmoid` (opset 13): T: 4 dtypes onto 3 encodings
+- `Sign` (opset 9): T: 11 dtypes onto 7 encodings
+- `Sign` (opset 13): T: 12 dtypes onto 8 encodings
+- `Sin` (opset 7): T: 3 dtypes onto 2 encodings
+- `Sin` (opset 22): T: 4 dtypes onto 3 encodings
+- `Sinh` (opset 9): T: 3 dtypes onto 2 encodings
+- `Sinh` (opset 22): T: 4 dtypes onto 3 encodings
+- `Size` (opset 1): T: 12 dtypes onto 7 encodings
+- `Size` (opset 13, 19, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Slice` (opset 1, 10, 11): T: 12 dtypes onto 7 encodings
+- `Slice` (opset 13): T: 13 dtypes onto 8 encodings
+- `Slice` (opset 10, 11, 13): Tind: 2 dtypes onto 1 encodings
+- `Softmax` (opset 1, 11): T: 3 dtypes onto 2 encodings
+- `Softmax` (opset 13): T: 4 dtypes onto 3 encodings
+- `SoftmaxCrossEntropyLoss` (opset 12): T: 3 dtypes onto 2 encodings
+- `SoftmaxCrossEntropyLoss` (opset 13): T: 4 dtypes onto 3 encodings
+- `SoftmaxCrossEntropyLoss` (opset 12, 13): Tind: 2 dtypes onto 1 encodings
+- `Softplus` (opset 1): T: 3 dtypes onto 2 encodings
+- `Softplus` (opset 22): T: 4 dtypes onto 3 encodings
+- `Softsign` (opset 1): T: 3 dtypes onto 2 encodings
+- `Softsign` (opset 22): T: 4 dtypes onto 3 encodings
+- `SpaceToDepth` (opset 1): T: 12 dtypes onto 7 encodings
+- `SpaceToDepth` (opset 13): T: 13 dtypes onto 8 encodings
+- `Split` (opset 2, 11): T: 12 dtypes onto 7 encodings
+- `Split` (opset 13, 18): T: 13 dtypes onto 8 encodings
+- `Split` (opset 1): T: 3 dtypes onto 2 encodings
+- `Sqrt` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Sqrt` (opset 13): T: 4 dtypes onto 3 encodings
+- `Squeeze` (opset 1, 11): T: 12 dtypes onto 7 encodings
+- `Squeeze` (opset 13, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Sub` (opset 14): T: 12 dtypes onto 8 encodings
+- `Sub` (opset 1): T: 3 dtypes onto 2 encodings
+- `Sub` (opset 6, 7): T: 7 dtypes onto 3 encodings
+- `Sub` (opset 13): T: 8 dtypes onto 4 encodings
+- `Sum` (opset 1, 6, 8): T: 3 dtypes onto 2 encodings
+- `Sum` (opset 13): T: 4 dtypes onto 3 encodings
+- `Swish` (opset 24): T: 4 dtypes onto 3 encodings
+- `Tan` (opset 7): T: 3 dtypes onto 2 encodings
+- `Tan` (opset 22): T: 4 dtypes onto 3 encodings
+- `Tanh` (opset 1, 6): T: 3 dtypes onto 2 encodings
+- `Tanh` (opset 13): T: 4 dtypes onto 3 encodings
+- `TensorScatter` (opset 24): T: 13 dtypes onto 8 encodings
+- `TfIdfVectorizer` (opset 9): T: 2 dtypes onto 1 encodings
+- `ThresholdedRelu` (opset 10): T: 3 dtypes onto 2 encodings
+- `ThresholdedRelu` (opset 22): T: 4 dtypes onto 3 encodings
+- `Tile` (opset 6): T: 12 dtypes onto 7 encodings
+- `Tile` (opset 13): T: 13 dtypes onto 8 encodings
+- `Tile` (opset 1): T: 3 dtypes onto 2 encodings
+- `TopK` (opset 11): T: 11 dtypes onto 7 encodings
+- `TopK` (opset 24): T: 12 dtypes onto 8 encodings
+- `TopK` (opset 1, 10): T: 3 dtypes onto 2 encodings
+- `Transpose` (opset 1): T: 12 dtypes onto 7 encodings
+- `Transpose` (opset 13, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Trilu` (opset 14): T: 13 dtypes onto 8 encodings
+- `Unique` (opset 11): T: 12 dtypes onto 7 encodings
+- `Unsqueeze` (opset 1, 11): T: 12 dtypes onto 7 encodings
+- `Unsqueeze` (opset 13, 21, 23, 24, 25): T: 13 dtypes onto 8 encodings
+- `Upsample` (opset 7, 9): T: 12 dtypes onto 7 encodings
+- `Where` (opset 9): T: 12 dtypes onto 7 encodings
+- `Where` (opset 16): T: 13 dtypes onto 8 encodings
+
+### dtypes with no encoding removed
+
+- `BitCast` (opset 26): T1: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(uint2), tensor(uint4)
+- `BitCast` (opset 26): T2: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(uint2), tensor(uint4)
+- `Cast` (opset 25): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Cast` (opset 24): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Cast` (opset 23): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Cast` (opset 21): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Cast` (opset 19): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Cast` (opset 9, 13): T1: tensor(string)
+- `Cast` (opset 25): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Cast` (opset 24): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Cast` (opset 23): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Cast` (opset 21): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Cast` (opset 19): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Cast` (opset 9, 13): T2: tensor(string)
+- `CastLike` (opset 25): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `CastLike` (opset 24): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `CastLike` (opset 23): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `CastLike` (opset 21): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `CastLike` (opset 19): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `CastLike` (opset 15): T1: tensor(string)
+- `CastLike` (opset 25): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `CastLike` (opset 24): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `CastLike` (opset 23): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `CastLike` (opset 21): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `CastLike` (opset 19): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `CastLike` (opset 15): T2: tensor(string)
+- `CenterCropPad` (opset 18): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Col2Im` (opset 18): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Compress` (opset 9, 11): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Concat` (opset 4, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Constant` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Constant` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Constant` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Constant` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Constant` (opset 19): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Constant` (opset 9, 11, 12, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `ConstantOfShape` (opset 25): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(uint2), tensor(uint4)
+- `ConstantOfShape` (opset 24): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(uint4)
+- `ConstantOfShape` (opset 23): T2: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(uint4)
+- `ConstantOfShape` (opset 20): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `ConstantOfShape` (opset 21): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(uint4)
+- `DepthToSpace` (opset 1, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `DequantizeLinear` (opset 25): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int2), tensor(int4), tensor(uint2), tensor(uint4)
+- `DequantizeLinear` (opset 23, 24): T1: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(uint4)
+- `DequantizeLinear` (opset 19): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `DequantizeLinear` (opset 21): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(uint4)
+- `DequantizeLinear` (opset 24, 25): T2: tensor(float8e8m0)
+- `Dropout` (opset 22): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `Dropout` (opset 22): T: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `Equal` (opset 19): T: tensor(string)
+- `Expand` (opset 8, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Flatten` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Flatten` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Flatten` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Flatten` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Flatten` (opset 9, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Gather` (opset 1, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `GatherElements` (opset 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `GatherND` (opset 11, 12, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `GridSample` (opset 16, 20, 22): T1: tensor(complex128), tensor(complex64), tensor(string)
+- `Identity` (opset 1, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Identity` (opset 25): V: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Identity` (opset 24): V: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Identity` (opset 23): V: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Identity` (opset 21): V: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Identity` (opset 19): V: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Identity` (opset 16): V: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(string)
+- `Identity` (opset 14): V: seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(string)
+- `IsInf` (opset 20): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `IsNaN` (opset 20): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `NonZero` (opset 9, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `OneHot` (opset 9, 11): T3: tensor(complex128), tensor(complex64), tensor(string)
+- `OptionalGetElement` (opset 18): O: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(string)
+- `OptionalGetElement` (opset 18): V: seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(string)
+- `OptionalHasElement` (opset 18): O: optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), optional(seq(tensor(float))), optional(seq(tensor(float16))), optional(seq(tensor(int16))), optional(seq(tensor(int32))), optional(seq(tensor(int64))), optional(seq(tensor(int8))), optional(seq(tensor(string))), optional(seq(tensor(uint16))), optional(seq(tensor(uint32))), optional(seq(tensor(uint64))), optional(seq(tensor(uint8))), optional(tensor(bool)), optional(tensor(complex128)), optional(tensor(complex64)), optional(tensor(double)), optional(tensor(float)), optional(tensor(float16)), optional(tensor(int16)), optional(tensor(int32)), optional(tensor(int64)), optional(tensor(int8)), optional(tensor(string)), optional(tensor(uint16)), optional(tensor(uint32)), optional(tensor(uint64)), optional(tensor(uint8)), seq(tensor(bool)), seq(tensor(complex128)), seq(tensor(complex64)), seq(tensor(double)), seq(tensor(float)), seq(tensor(float16)), seq(tensor(int16)), seq(tensor(int32)), seq(tensor(int64)), seq(tensor(int8)), seq(tensor(string)), seq(tensor(uint16)), seq(tensor(uint32)), seq(tensor(uint64)), seq(tensor(uint8)), tensor(complex128), tensor(complex64), tensor(string)
+- `Pad` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Pad` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Pad` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Pad` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Pad` (opset 13, 18, 19): T: tensor(complex128), tensor(complex64), tensor(string)
+- `QLinearMatMul` (opset 21): T1: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `QLinearMatMul` (opset 21): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `QLinearMatMul` (opset 21): T3: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `QuantizeLinear` (opset 19): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz)
+- `QuantizeLinear` (opset 21): T2: tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(uint4)
+- `QuantizeLinear` (opset 24, 25): T2: tensor(float8e8m0)
+- `QuantizeLinear` (opset 25): T3: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int2), tensor(int4), tensor(uint2), tensor(uint4)
+- `QuantizeLinear` (opset 23, 24): T3: tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(uint4)
+- `RandomNormalLike` (opset 1, 22): T1: tensor(complex128), tensor(complex64), tensor(string)
+- `RandomUniformLike` (opset 1, 22): T1: tensor(complex128), tensor(complex64), tensor(string)
+- `Reshape` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Reshape` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Reshape` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Reshape` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Reshape` (opset 19): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Reshape` (opset 5, 13, 14): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Resize` (opset 11, 13, 18, 19): T1: tensor(complex128), tensor(complex64), tensor(string)
+- `Resize` (opset 10): T: tensor(complex128), tensor(complex64), tensor(string)
+- `ReverseSequence` (opset 10): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Scatter` (opset 9): T: tensor(complex128), tensor(complex64), tensor(string)
+- `ScatterElements` (opset 11, 13, 16, 18): T: tensor(complex128), tensor(complex64), tensor(string)
+- `ScatterND` (opset 11, 13, 16, 18): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Shape` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Shape` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Shape` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Shape` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Shape` (opset 19): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Shape` (opset 1, 13, 15): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Size` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Size` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Size` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Size` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Size` (opset 19): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(string)
+- `Size` (opset 1, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Slice` (opset 1, 10, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `SpaceToDepth` (opset 1, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Split` (opset 2, 11, 13, 18): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Squeeze` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Squeeze` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Squeeze` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Squeeze` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Squeeze` (opset 1, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `TensorScatter` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `TfIdfVectorizer` (opset 9): T: tensor(string)
+- `Tile` (opset 6, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Transpose` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Transpose` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Transpose` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Transpose` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Transpose` (opset 1, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Trilu` (opset 14): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Unique` (opset 11): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Unsqueeze` (opset 25): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int2), tensor(int4), tensor(string), tensor(uint2), tensor(uint4)
+- `Unsqueeze` (opset 24): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(float8e8m0), tensor(int4), tensor(string), tensor(uint4)
+- `Unsqueeze` (opset 23): T: tensor(complex128), tensor(complex64), tensor(float4e2m1), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Unsqueeze` (opset 21): T: tensor(complex128), tensor(complex64), tensor(float8e4m3fn), tensor(float8e4m3fnuz), tensor(float8e5m2), tensor(float8e5m2fnuz), tensor(int4), tensor(string), tensor(uint4)
+- `Unsqueeze` (opset 1, 11, 13): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Upsample` (opset 7, 9): T: tensor(complex128), tensor(complex64), tensor(string)
+- `Where` (opset 9, 16): T: tensor(complex128), tensor(complex64), tensor(string)
+
+### optional attributes omitted
+
+- `Constant` (opset 11, 12, 13, 19, 21, 23, 24, 25): sparse_value of type SPARSE_TENSOR
+
+### leading versions omitted
+
+- `OptionalGetElement` (opset 15): composite-type: 'O' admits only optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), and 26 more
+- `OptionalHasElement` (opset 15): composite-type: 'O' admits only optional(seq(tensor(bool))), optional(seq(tensor(complex128))), optional(seq(tensor(complex64))), optional(seq(tensor(double))), and 26 more
+- `Upsample` (opset 1): experimental: support level is EXPERIMENTAL
+
+### deprecated versions omitted
+
+- `GroupNormalization` (opset 18)
+- `Scatter` (opset 11)
+- `Upsample` (opset 10)
