@@ -304,6 +304,23 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
     auto module = step("xrt::module", [&] { return xrt::module{executable}; });
     auto kernel = step("xrt::ext::kernel", [&] { return xrt::ext::kernel{context, module, name}; });
 
+    // Two ways to get the instructions to the device, and the xclbin does not say which it wants.
+    //
+    //   elf     -- aiebu wraps the transaction blob in an ELF and XRT patches the buffer addresses
+    //              into it. This is what operation.cpp does, and what FastFlowLM does with its own
+    //              xclbins.
+    //   legacy  -- the words go into a plain cacheable buffer and ride as arguments 1 and 2.
+    //              This is what mlir-aie's own runtime does with an aiecc .bin, so it is the flow
+    //              these xclbins were built against. XRT calls it deprecated but still takes it.
+    auto plain = step("xrt::kernel (legacy)", [&] { return xrt::kernel{context, name}; });
+
+    auto const stream_bytes = stream.size() * sizeof(command::word);
+    auto       insts_bo     = step("bo(insts, cacheable)", [&] {
+        return xrt::bo{device, stream_bytes, xrt::bo::flags::cacheable, plain.group_id(1)};
+    });
+    std::memcpy(insts_bo.map(), stream.data(), stream_bytes);
+    insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+
     auto in_bo  = step("bo(input)", [&] { return xrt::ext::bo{device, input.size()}; });
     auto out_bo = step("bo(output)", [&] { return xrt::ext::bo{device, golden.size()}; });
 
@@ -336,14 +353,20 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
     auto buffers_only = [&] {
         return weighted ? kernel(in_bo, weight_bo, out_bo) : kernel(in_bo, out_bo);
     };
+    // mlir-aie passes the buffer's size in bytes here, not the word count.
+    auto legacy = [&] {
+        return weighted ? plain(kStartNpu, insts_bo, stream_bytes, in_bo, weight_bo, out_bo)
+                        : plain(kStartNpu, insts_bo, stream_bytes, in_bo, out_bo);
+    };
 
     ert_cmd_state state{};
     bool          ran = false;
     char const*   how = "";
 
     for (auto const& [label, launch] :
-         {std::pair<char const*, std::function<xrt::run()>>{"(3,0,0,bo..)", with_scalars},
-          std::pair<char const*, std::function<xrt::run()>>{"(bo.. 만)", buffers_only}})
+         {std::pair<char const*, std::function<xrt::run()>>{"elf (3,0,0,bo..)", with_scalars},
+          std::pair<char const*, std::function<xrt::run()>>{"elf (bo.. 만)", buffers_only},
+          std::pair<char const*, std::function<xrt::run()>>{"legacy (3,insts_bo,n,bo..)", legacy}})
     {
         try
         {
@@ -389,7 +412,10 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
         auto const started = std::chrono::steady_clock::now();
         for (int at = 0; at < repeats; ++at)
         {
-            (how[1] == '3' ? with_scalars() : buffers_only()).wait();
+            (std::string_view{how}.starts_with("legacy")                     ? legacy()
+             : std::string_view{how}.find("3,0,0") != std::string_view::npos ? with_scalars()
+                                                                             : buffers_only())
+                .wait();
         }
         auto const spent =
             std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - started)
