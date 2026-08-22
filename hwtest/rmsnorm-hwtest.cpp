@@ -1,26 +1,20 @@
-// Runs an RMSNorm instruction stream this repository emits on a real NPU and checks the numbers.
+// Runs an RMSNorm through this repository's own backend on a real NPU and checks the numbers.
 //
-// The stream is not read from a file: it is built here by amd::programs::rmsnorm, the same code
-// the runtime uses. On a machine with no NPU that emitter has only ever been checked against the
-// streams aiecc produced, which proves the bytes agree but not that the hardware accepts them or
-// that what comes back is right. That is what this is for.
+// Nothing here talks to XRT for the run itself. The instruction stream is built by
+// amd::programs::rmsnorm, the array is opened by amd::device, and the run goes through
+// amd::operation -- the same objects the runtime is made of. Going around them, as an earlier
+// version of this did, hides exactly the kind of gap that matters: device had no constructor at
+// all and nobody noticed, because nothing had ever constructed one.
 //
-// Everything the emitter needs is in a handful of headers with no XRT in them, so this builds
-// against XRT alone -- no protobuf, no onnx, none of the rest of the tree.
+// Everything the backend needs is in headers with no XRT of their own, so this builds against
+// XRT and spdlog alone -- no protobuf, no onnx, none of the rest of the tree.
 
 #include "amd/device.hpp"
 #include "amd/programs/rmsnorm.hpp"
 
 #include <xrt/xrt_bo.h>
 #include <xrt/xrt_device.h>
-#include <xrt/xrt_kernel.h>
-
-#include <xrt/experimental/xrt_elf.h>
-#include <xrt/experimental/xrt_ext.h>
-#include <xrt/experimental/xrt_module.h>
 #include <xrt/experimental/xrt_xclbin.h>
-
-#include <aiebu/aiebu.h>
 
 #include <algorithm>
 #include <chrono>
@@ -30,10 +24,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <functional>
 #include <fstream>
-#include <stdexcept>
 #include <memory>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -45,7 +39,13 @@ namespace
 {
 
 // ---------------------------------------------------------------------------------------------
-// bf16, only as much of it as comparing two buffers needs
+
+void
+say(char const* what)
+{
+    std::printf("  .. %s\n", what);
+    std::fflush(stdout);
+}
 
 float
 from_bf16(std::uint16_t raw)
@@ -56,17 +56,21 @@ from_bf16(std::uint16_t raw)
     return out;
 }
 
-// ---------------------------------------------------------------------------------------------
-
 std::vector<char>
 read_file(fs::path const& path)
 {
     std::ifstream in{path, std::ios::binary};
     if (not in) throw std::runtime_error("cannot read " + path.string());
-    return {std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+
+    std::vector<char> bytes{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+
+    std::printf("     %-28s %8zu B\n", path.filename().string().c_str(), bytes.size());
+    return bytes;
 }
 
-/// The design descriptor the baking script wrote into the xclbin, so nothing here restates it.
+// ---------------------------------------------------------------------------------------------
+// The design descriptor the baking script wrote into the xclbin, so nothing here restates it.
+
 std::string_view
 user_metadata(xrt::xclbin const& binary)
 {
@@ -90,8 +94,7 @@ number_in(std::string_view json, std::string_view key)
 {
     auto const at = json.find("\"" + std::string{key} + "\"");
     if (at == std::string_view::npos) throw std::runtime_error("no '" + std::string{key} + "'");
-    auto const colon = json.find(':', at);
-    return std::strtol(json.data() + colon + 1, nullptr, 10);
+    return std::strtol(json.data() + json.find(':', at) + 1, nullptr, 10);
 }
 
 bool
@@ -102,39 +105,49 @@ flag_in(std::string_view json, std::string_view key)
     return json.find("true", at) < json.find(',', at);
 }
 
-/// mlir-aie names its one kernel this; the instance suffix varies, so the prefix is matched.
-std::string
-kernel_named(xrt::xclbin const& binary)
+void
+describe_signature(xrt::xclbin const& binary)
 {
-    for (auto const& kernel : binary.get_kernels())
+    for (auto const& one : binary.get_kernels())
     {
-        if (kernel.get_name().rfind("MLIR_AIE", 0) == 0) return kernel.get_name();
+        std::printf("     커널 %s, 인자 %zu개\n", one.get_name().c_str(), one.get_num_args());
+        for (auto const& arg : one.get_args())
+        {
+            std::printf("       [%zu] %-7s size=%zu offset=%zu %s\n",
+                        static_cast<std::size_t>(arg.get_index()),
+                        arg.get_name().c_str(),
+                        arg.get_size(),
+                        arg.get_offset(),
+                        arg.get_host_type().c_str());
+        }
     }
-    throw std::runtime_error("xclbin declares no MLIR_AIE kernel");
 }
 
-std::vector<char>
-assemble(std::span<command::word const> stream)
+/// The four words every transaction stream opens with, so a malformed one is visible here rather
+/// than as a hang on the device.
+void
+describe_header(std::span<command::word const> stream)
 {
-    void*    elf{nullptr};
-    unsigned size = aiebu_assembler_get_elf(aiebu_assembler_buffer_type_blob_instr_transaction,
-                                            reinterpret_cast<char const*>(stream.data()),
-                                            stream.size() * sizeof(command::word),
-                                            nullptr,
-                                            0,
-                                            &elf,
-                                            nullptr,
-                                            0,
-                                            "",
-                                            "",
-                                            nullptr,
-                                            0);
-    if (elf == nullptr or size == 0) throw std::runtime_error("aiebu produced no elf");
+    if (stream.size() < 4)
+    {
+        std::printf("     스트림이 헤더보다 짧다 (%zu 워드)\n", stream.size());
+        return;
+    }
 
-    std::vector<char> out(static_cast<char*>(elf), static_cast<char*>(elf) + size);
-    std::free(elf);
-    return out;
+    std::printf("     헤더 major=%u minor=%u generation=%u rows=%u cols=%u memtile=%u\n",
+                stream[0] & 0xFFU,
+                (stream[0] >> 8) & 0xFFU,
+                (stream[0] >> 16) & 0xFFU,
+                (stream[0] >> 24) & 0xFFU,
+                stream[1] & 0xFFU,
+                (stream[1] >> 8) & 0xFFU);
+    std::printf("     명령 %u개, %u B (파일 %zu B)\n",
+                stream[2],
+                stream[3],
+                stream.size() * sizeof(command::word));
 }
+
+// ---------------------------------------------------------------------------------------------
 
 struct deviation
 {
@@ -142,6 +155,7 @@ struct deviation
     float       worst_rel{};
     float       worst_abs{};
     std::size_t outside{};
+    std::size_t zeros{};
 };
 
 deviation
@@ -158,6 +172,7 @@ compare(std::span<std::uint16_t const> got,
         auto const abs = std::fabs(a - b);
         auto const rel = std::fabs(b) > 0.0F ? abs / std::fabs(b) : abs;
 
+        if (a == 0.0F) ++found.zeros;
         if (rel > found.worst_rel)
         {
             found.worst_rel = rel;
@@ -171,27 +186,28 @@ compare(std::span<std::uint16_t const> got,
 
 // ---------------------------------------------------------------------------------------------
 
-/// Everything a case needs, and everything building it produced.
-struct case_inputs
+/// Allocated the one way that works on both driver stacks. An xrt::bo subclass handed to the
+/// variadic kernel call is taken for a scalar by older XRT and rejected as
+/// "patch_value() only supports 64-bit values or less".
+xrt::bo
+data_buffer(xrt::device const& device, std::size_t bytes)
 {
-    xrt::xclbin                        binary;
-    command_list                       sequence{npu::npu2, 8};
-    std::shared_ptr<programs::rmsnorm> program;
-    std::vector<char>                  input, weight, golden;
-    bool                               weighted{};
-};
+    return xrt::bo{device, bytes, xrt::bo::flags::host_only, xrt::memory_group{0}};
+}
 
-/// The half that needs no device: build the stream and check it against what aiecc produced.
-/// Splitting it out means a machine with no NPU can still tell whether the artifacts and the
-/// emitter agree, which is the first thing to know when the hardware run misbehaves.
 bool
-build_case(fs::path const& dir, std::string const& name, case_inputs& built)
+run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
 {
     std::printf("\n=== %s\n", name.c_str());
 
-    built.binary = xrt::xclbin{(dir / (name + ".xclbin")).string()};
+    say("아티팩트 읽기");
+    auto const  xclbin_path = dir / (name + ".xclbin");
+    xrt::xclbin binary{xclbin_path.string()};
+    std::printf("     %-28s %8ju B\n",
+                xclbin_path.filename().string().c_str(),
+                static_cast<std::uintmax_t>(fs::file_size(xclbin_path)));
 
-    auto const metadata = user_metadata(built.binary);
+    auto const metadata = user_metadata(binary);
     if (metadata.empty()) throw std::runtime_error("xclbin carries no USER_METADATA");
 
     auto const columns  = static_cast<std::uint32_t>(number_in(metadata, "columns"));
@@ -199,20 +215,24 @@ build_case(fs::path const& dir, std::string const& name, case_inputs& built)
     auto const bytes    = static_cast<std::uint32_t>(number_in(metadata, "element_bytes"));
     auto const weighted = flag_in(metadata, "weighted");
 
-    built.weighted = weighted;
-    built.input    = read_file(dir / (name + ".input.bin"));
-    built.golden   = read_file(dir / (name + ".golden.bin"));
-    built.weight   = weighted ? read_file(dir / (name + ".weight.bin")) : std::vector<char>{};
+    auto const input  = read_file(dir / (name + ".input.bin"));
+    auto const golden = read_file(dir / (name + ".golden.bin"));
+    auto const weight = weighted ? read_file(dir / (name + ".weight.bin")) : std::vector<char>{};
 
-    auto const elements = static_cast<std::uint32_t>(built.input.size() / bytes);
+    auto const elements = static_cast<std::uint32_t>(input.size() / bytes);
 
-    std::printf("  설계: columns=%u channels=%u weighted=%s, 원소 %u개\n",
+    say("설계 (xclbin USER_METADATA)");
+    std::printf("     columns=%u channels=%u weighted=%s element_bytes=%u 원소 %u개\n",
                 columns,
                 channels,
                 weighted ? "yes" : "no",
+                bytes,
                 elements);
+    describe_signature(binary);
 
-    // ---- 명령 스트림을 여기서 만든다 (파일에서 읽지 않는다)
+    // ---- the instruction stream, built here by the program the runtime uses
+    say("명령 스트림 합성 (amd::programs::rmsnorm)");
+
     programs::rmsnorm::parameters param{};
     param.design.op                = "rmsnorm";
     param.design.generation        = npu::npu2;
@@ -226,282 +246,149 @@ build_case(fs::path const& dir, std::string const& name, case_inputs& built)
     param.weight                   = {.argument_index = 1};
     param.output                   = {.argument_index = weighted ? 2U : 1U};
 
-    built.program = std::make_shared<programs::rmsnorm>(std::move(param));
+    programs::rmsnorm const emitter{param};
 
-    if (auto const failure = built.program->wire(built.sequence))
+    std::printf("     코어 %u개, 코어당 %u 원소, 컬럼당 BD %u개\n",
+                emitter.cores(),
+                emitter.slice(),
+                emitter.buffer_descriptors_used());
+
+    auto sequence = std::make_unique<command_list>(npu::npu2, 8);
+    if (auto const refused = emitter.wire(*sequence))
     {
-        std::printf("  wire 실패: %s\n", failure.message().c_str());
+        std::printf("     wire 거부: %s\n", refused.message().c_str());
         return false;
     }
-    if (not built.sequence.finalize()) throw std::runtime_error("finalize failed");
+    if (not sequence->finalize()) throw std::runtime_error("finalize failed");
 
-    auto const stream = built.sequence.as_instructions();
-    std::printf("  명령 스트림: %zu 워드 (%zu 바이트)\n",
-                stream.size(),
-                stream.size() * sizeof(command::word));
+    describe_header(sequence->as_instructions());
 
-    // 참고: aiecc 가 만든 것과 같은지 (있을 때만)
+    // Compared before anything is sent anywhere: if the stream is already wrong, the hardware has
+    // nothing to say about it.
     if (auto const reference = dir / (name + ".aiecc.bin"); fs::exists(reference))
     {
         auto const theirs = read_file(reference);
-        auto const same   = theirs.size() == stream.size() * sizeof(command::word) and
-                            std::memcmp(theirs.data(), stream.data(), theirs.size()) == 0;
-        std::printf("  aiecc 스트림과 %s\n", same ? "바이트 일치" : "다름 (!)");
+        auto const ours   = sequence->as_instructions();
+        bool const same   = theirs.size() == ours.size() * sizeof(command::word) and
+                            std::memcmp(theirs.data(), ours.data(), theirs.size()) == 0;
+        std::printf("     aiecc 스트림과 %s\n", same ? "바이트 일치" : "다름 (!)");
         if (not same) return false;
     }
 
-    return true;
-}
-
-/// Names each step so a failure says which call threw rather than only what it said.
-template <typename F>
-auto
-step(char const* what, F&& body) -> decltype(body())
-{
-    std::printf("  .. %s\n", what);
-    std::fflush(stdout);
-    return body();
-}
-
-void
-describe_signature(xrt::xclbin const& binary, std::string const& kernel)
-{
-    for (auto const& one : binary.get_kernels())
+    if (dry)
     {
-        if (one.get_name() != kernel) continue;
-
-        std::printf("  커널 인자 %zu개:\n", one.get_num_args());
-        for (auto const& arg : one.get_args())
-        {
-            std::printf("    [%zu] %-8s size=%zu offset=%zu host_type=%s\n",
-                        static_cast<std::size_t>(arg.get_index()),
-                        arg.get_name().c_str(),
-                        arg.get_size(),
-                        arg.get_offset(),
-                        arg.get_host_type().c_str());
-        }
-    }
-}
-
-/// The half that needs the NPU.
-bool
-run_case(xrt::device& device, case_inputs const& built, int repeats)
-{
-    auto const  stream   = built.sequence.as_instructions();
-    auto const  weighted = built.weighted;
-    auto const& binary   = built.binary;
-    auto const& input    = built.input;
-    auto const& weight   = built.weight;
-    auto const& golden   = built.golden;
-
-    auto const name = kernel_named(binary);
-    describe_signature(binary, name);
-
-    auto const uuid    = step("register_xclbin", [&] { return device.register_xclbin(binary); });
-    auto       context = step("hw_context", [&] { return xrt::hw_context{device, uuid}; });
-
-    auto const elf_bytes = step("aiebu -> elf", [&] { return assemble(stream); });
-    auto       executable =
-        step("xrt::elf", [&] { return xrt::elf{elf_bytes.data(), elf_bytes.size()}; });
-    auto module = step("xrt::module", [&] { return xrt::module{executable}; });
-    auto kernel = step("xrt::ext::kernel", [&] { return xrt::ext::kernel{context, module, name}; });
-
-    // Two ways to get the instructions to the device, and the xclbin does not say which it wants.
-    //
-    //   elf     -- aiebu wraps the transaction blob in an ELF and XRT patches the buffer addresses
-    //              into it. This is what operation.cpp does, and what FastFlowLM does with its own
-    //              xclbins.
-    //   legacy  -- the words go into a plain cacheable buffer and ride as arguments 1 and 2.
-    //              This is what mlir-aie's own runtime does with an aiecc .bin, so it is the flow
-    //              these xclbins were built against. XRT calls it deprecated but still takes it.
-    auto plain = step("xrt::kernel (legacy)", [&] { return xrt::kernel{context, name}; });
-
-    auto const stream_bytes = stream.size() * sizeof(command::word);
-    auto       insts_bo     = step("bo(insts, cacheable)", [&] {
-        // group_id() answers with an int and the constructor wants a memory_group, which a
-        // braced initializer will not narrow for us.
-        return xrt::bo{device,
-                       stream_bytes,
-                       xrt::bo::flags::cacheable,
-                       static_cast<xrt::memory_group>(plain.group_id(1))};
-    });
-    std::memcpy(insts_bo.map(), stream.data(), stream_bytes);
-    insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-
-    // Plain xrt::bo, deliberately. Handing an xrt::ext::bo to the variadic kernel call is what
-    // produced "patch_value() only supports 64-bit values or less" here: older XRT has no
-    // set_arg overload for xrt::bo subclasses, so the generic one takes them as scalars and tries
-    // to patch sizeof(xrt::ext::bo) == 16 bytes as an argument value. Newer headers carry an
-    // overload that catches it; the driver stack this runs against does not.
-    struct allocator
-    {
-        char const*                         what;
-        std::function<xrt::bo(std::size_t)> make;
-    };
-
-    std::vector<allocator> const allocators{
-        {"xrt::bo host_only grp0",
-         [&](std::size_t size) {
-             return xrt::bo{device, size, xrt::bo::flags::host_only, xrt::memory_group{0}};
-         }},
-    };
-
-    constexpr std::uint64_t kStartNpu = 3;
-
-    bool ok = false;
-
-    for (auto const& how : allocators)
-    {
-        std::printf("  -- 버퍼: %s\n", how.what);
-        std::fflush(stdout);
-
-        xrt::bo in_bo{}, out_bo{}, weight_bo{}, insts_bo{};
-        try
-        {
-            in_bo     = how.make(input.size());
-            out_bo    = how.make(golden.size());
-            weight_bo = how.make(weighted ? weight.size() : std::size_t{4});
-            insts_bo  = xrt::bo{device,
-                                stream.size() * sizeof(command::word),
-                                xrt::bo::flags::cacheable,
-                                static_cast<xrt::memory_group>(plain.group_id(1))};
-        }
-        catch (std::exception const& failure)
-        {
-            std::printf("     할당 실패: %s\n", failure.what());
-            continue;
-        }
-
-        std::memcpy(insts_bo.map(), stream.data(), stream.size() * sizeof(command::word));
-        std::memcpy(in_bo.map(), input.data(), input.size());
-        std::memset(out_bo.map(), 0, golden.size());
-        if (weighted) std::memcpy(weight_bo.map(), weight.data(), weight.size());
-
-        insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        if (weighted) weight_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-
-        auto const words = static_cast<std::uint32_t>(stream.size() * sizeof(command::word));
-
-        auto launch = [&] {
-            return weighted ? plain(kStartNpu, insts_bo, words, in_bo, weight_bo, out_bo)
-                            : plain(kStartNpu, insts_bo, words, in_bo, out_bo);
-        };
-
-        ert_cmd_state state{};
-        try
-        {
-            state = launch().wait();
-        }
-        catch (std::exception const& failure)
-        {
-            std::printf("     실행 거부: %s\n", failure.what());
-            continue;
-        }
-
-        out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-
-        auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()),
-                                    golden.size() / sizeof(std::uint16_t)};
-        auto const want = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()),
-                                    golden.size() / sizeof(std::uint16_t)};
-
-        std::printf("     상태 %d  나온 값", static_cast<int>(state));
-        for (std::size_t at = 0; at < 4 and at < got.size(); ++at)
-            std::printf(" %8.4f", static_cast<double>(from_bf16(got[at])));
-        std::printf("   정답");
-        for (std::size_t at = 0; at < 4 and at < want.size(); ++at)
-            std::printf(" %8.4f", static_cast<double>(from_bf16(want[at])));
-        std::printf("\n");
-
-        auto const off = compare(got, want, 0.04F, 1e-6F);
-        std::printf("     최대 상대오차 %.4g, 허용 밖 %zu / %zu\n",
-                    static_cast<double>(off.worst_rel),
-                    off.outside,
-                    want.size());
-
-        if (off.outside == 0)
-        {
-            ok = true;
-            if (repeats > 0)
-            {
-                auto const started = std::chrono::steady_clock::now();
-                for (int at = 0; at < repeats; ++at)
-                    launch().wait();
-                auto const spent = std::chrono::duration<double, std::micro>(
-                                       std::chrono::steady_clock::now() - started)
-                                       .count();
-                std::printf("     %d회 평균 %.1f us\n", repeats, spent / repeats);
-            }
-            break;
-        }
+        std::printf("  건식: 여기까지. 디바이스는 열지 않는다\n");
+        return true;
     }
 
-    // The same work, driven through the classes the runtime is built out of rather than through
-    // XRT directly. operation already assembles an ELF from a command_list at run time; this is
-    // only calling it. Whether it comes back is the question -- the path it takes is the one XRT
-    // refused above, and confirming that from inside our own plumbing is the point.
-    std::printf("  -- amd::device / amd::operation 경로\n");
-    try
+    // ---- the backend
+    say("amd::device 열기");
+    lnpu::nex::amd::device owner{0};
+
+    say("load_op (register_xclbin + hw_context)");
+    if (auto const refused = owner.load_op(name, xrt::xclbin{binary}))
     {
-        // Fully qualified: 'device' alone would be the xrt::device parameter here.
-        lnpu::nex::amd::device owner{0};
-
-        if (auto const failure = owner.load_op("rmsnorm", xrt::xclbin{binary}))
-        {
-            std::printf("     load_op 실패: %s\n", failure.message().c_str());
-        }
-        else if (auto* const loaded = owner.op("rmsnorm"); loaded == nullptr)
-        {
-            std::printf("     op() 가 null 을 돌려줌\n");
-        }
-        else
-        {
-            auto again = std::make_unique<command_list>(npu::npu2, 8);
-            if (built.program->wire(*again)) throw std::runtime_error("wire failed");
-
-            auto running = loaded->create_instance(std::move(again));
-
-            auto in_bo =
-                xrt::bo{device, input.size(), xrt::bo::flags::host_only, xrt::memory_group{0}};
-            auto out_bo =
-                xrt::bo{device, golden.size(), xrt::bo::flags::host_only, xrt::memory_group{0}};
-            auto w_bo = xrt::bo{device,
-                                weighted ? weight.size() : std::size_t{4},
-                                xrt::bo::flags::host_only,
-                                xrt::memory_group{0}};
-
-            std::memcpy(in_bo.map(), input.data(), input.size());
-            std::memset(out_bo.map(), 0, golden.size());
-            if (weighted) std::memcpy(w_bo.map(), weight.data(), weight.size());
-            in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-            if (weighted) w_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-
-            auto const refused =
-                weighted ? running->execute(in_bo, w_bo, out_bo) : running->execute(in_bo, out_bo);
-
-            out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-
-            auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()),
-                                        golden.size() / sizeof(std::uint16_t)};
-            auto const want = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()),
-                                        golden.size() / sizeof(std::uint16_t)};
-            auto const off  = compare(got, want, 0.04F, 1e-6F);
-
-            std::printf("     execute → %s, 최대 상대오차 %.4g, 허용 밖 %zu / %zu\n",
-                        refused ? refused.message().c_str() : "ok",
-                        static_cast<double>(off.worst_rel),
-                        off.outside,
-                        want.size());
-        }
-    }
-    catch (std::exception const& failure)
-    {
-        std::printf("     예외: %s\n", failure.what());
+        std::printf("     거부: %s\n", refused.message().c_str());
+        return false;
     }
 
+    auto* const loaded = owner.op(name);
+    if (loaded == nullptr)
+    {
+        std::printf("     op() 가 null 을 돌려줌\n");
+        return false;
+    }
+
+    say("create_instance (aiebu -> elf -> module -> kernel)");
+    auto running = loaded->create_instance(std::move(sequence));
+
+    // ---- buffers
+    say("버퍼 (xrt::bo host_only)");
+    auto in_bo  = data_buffer(*owner.handle(), input.size());
+    auto out_bo = data_buffer(*owner.handle(), golden.size());
+    auto w_bo   = data_buffer(*owner.handle(), weighted ? weight.size() : std::size_t{4});
+
+    std::printf("     input %zu B @ %#llx, output %zu B @ %#llx",
+                input.size(),
+                static_cast<unsigned long long>(in_bo.address()),
+                golden.size(),
+                static_cast<unsigned long long>(out_bo.address()));
+    if (weighted)
+        std::printf(", weight %zu B @ %#llx",
+                    weight.size(),
+                    static_cast<unsigned long long>(w_bo.address()));
+    std::printf("\n");
+
+    std::memcpy(in_bo.map(), input.data(), input.size());
+    std::memset(out_bo.map(), 0, golden.size());
+    if (weighted) std::memcpy(w_bo.map(), weight.data(), weight.size());
+
+    in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    if (weighted) w_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+
+    // ---- run
+    say("execute");
+    auto const started = std::chrono::steady_clock::now();
+    auto const refused =
+        weighted ? running->execute(in_bo, w_bo, out_bo) : running->execute(in_bo, out_bo);
+    auto const once =
+        std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - started)
+            .count();
+
+    if (refused)
+    {
+        std::printf("     거부: %s\n", refused.message().c_str());
+        return false;
+    }
+    std::printf("     완료, %.1f us (첫 실행)\n", once);
+
+    out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+
+    // ---- numbers
+    auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()),
+                                golden.size() / sizeof(std::uint16_t)};
+    auto const want = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()),
+                                golden.size() / sizeof(std::uint16_t)};
+
+    say("결과");
+    std::printf("     나온 값");
+    for (std::size_t at = 0; at < 6 and at < got.size(); ++at)
+        std::printf(" %8.4f", static_cast<double>(from_bf16(got[at])));
+    std::printf("\n     정답   ");
+    for (std::size_t at = 0; at < 6 and at < want.size(); ++at)
+        std::printf(" %8.4f", static_cast<double>(from_bf16(want[at])));
+    std::printf("\n");
+
+    auto const off = compare(got, want, 0.04F, 1e-6F);
+    std::printf("     최대 상대오차 %.4g (원소 %zu, 절대 %.4g)\n",
+                static_cast<double>(off.worst_rel),
+                off.worst_at,
+                static_cast<double>(off.worst_abs));
+    std::printf("     허용 밖 %zu / %zu, 0 인 원소 %zu개\n", off.outside, want.size(), off.zeros);
+
+    if (off.zeros == want.size())
+    {
+        std::printf("     (전부 0 -- 커널이 이 버퍼에 쓰지 않았다는 뜻이다)\n");
+    }
+
+    if (repeats > 0)
+    {
+        auto const from = std::chrono::steady_clock::now();
+        for (int at = 0; at < repeats; ++at)
+        {
+            if (weighted)
+                running->execute(in_bo, w_bo, out_bo);
+            else
+                running->execute(in_bo, out_bo);
+        }
+        auto const spent =
+            std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - from)
+                .count();
+        std::printf("     %d회 평균 %.1f us\n", repeats, spent / repeats);
+    }
+
+    bool const ok = off.outside == 0;
     std::printf("  %s\n", ok ? "통과" : "실패");
     return ok;
 }
@@ -515,24 +402,13 @@ main(int argc, char** argv)
     int const      repeats = argc > 2 ? std::atoi(argv[2]) : 100;
     bool const     dry     = argc > 3 and std::string_view{argv[3]} == "--dry";
 
+    std::size_t ran = 0, passed = 0;
+
     try
     {
-        std::unique_ptr<xrt::device> device{};
-        if (dry)
-        {
-            std::printf("건식 실행: 스트림 생성까지만 확인하고 디바이스는 열지 않는다\n");
-        }
-        else
-        {
-            device = std::make_unique<xrt::device>(0);
-            std::printf("디바이스: %s\n", device->get_info<xrt::info::device::name>().c_str());
-        }
-
-        // index.json 의 name 목록만 훑는다.
         auto const       index = read_file(dir / "index.json");
         std::string_view text{index.data(), index.size()};
 
-        std::size_t passed = 0, ran = 0;
         for (std::size_t at = text.find("\"name\""); at != std::string_view::npos;
              at             = text.find("\"name\"", at + 1))
         {
@@ -543,27 +419,20 @@ main(int argc, char** argv)
             ++ran;
             try
             {
-                case_inputs built{};
-                if (not build_case(dir, name, built)) continue;
-                if (dry)
-                {
-                    ++passed;
-                    continue;
-                }
-                if (run_case(*device, built, repeats)) ++passed;
+                if (run_case(dir, name, repeats, dry)) ++passed;
             }
             catch (std::exception const& failure)
             {
                 std::printf("  예외: %s\n", failure.what());
             }
         }
-
-        std::printf("\n%zu개 중 %zu개 통과\n", ran, passed);
-        return passed == ran ? 0 : 1;
     }
     catch (std::exception const& failure)
     {
         std::printf("실패: %s\n", failure.what());
         return 2;
     }
+
+    std::printf("\n%zu개 중 %zu개 통과\n", ran, passed);
+    return passed == ran ? 0 : 1;
 }
