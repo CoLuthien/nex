@@ -10,6 +10,10 @@ namespace lnpu::detail
 namespace
 {
 
+/// Widest code range any encoding here could hold, so a nonsense bitwidth is caught even on the
+/// float region of a fake-quant, where no encoding is there to bound it.
+constexpr std::uint8_t kWidestCodeRange = 32;
+
 /**
  * @brief Reads is_quantizable<T> back out for a runtime encoding.
  */
@@ -69,7 +73,7 @@ zero_point_of(encoded::format const& fmt)
 }
 
 void
-validate(encoded::quantization const& quant, std::string const& name)
+validate(encoded::quantization const& quant, EDataType encoding, std::string const& name)
 {
     if (not quant.scale)
     {
@@ -80,6 +84,23 @@ validate(encoded::quantization const& quant, std::string const& name)
     {
         throw std::invalid_argument("'" + name + "' has a " + describe(quant.scale) +
                                     " scale; a quantization scale is normalized to f32");
+    }
+
+    if (quant.bitwidth == 0 or quant.bitwidth > kWidestCodeRange)
+    {
+        throw std::invalid_argument("'" + name + "' has a bitwidth of " +
+                                    std::to_string(quant.bitwidth) + "; a code range is 1 to " +
+                                    std::to_string(kWidestCodeRange) + " bits wide");
+    }
+
+    // Only once the region holds codes does the encoding have to have room for them. On a float
+    // region the parameters are fake-quant metadata describing a narrower range than the storage,
+    // which is the normal state of a weight that has not been converted yet.
+    if (auto const room = 8 * in_bytes(encoding); stores_codes(encoding) and quant.bitwidth > room)
+    {
+        throw std::invalid_argument("'" + name + "' describes a " + std::to_string(quant.bitwidth) +
+                                    "-bit code range but is stored as " + to_string(encoding) +
+                                    ", which holds " + std::to_string(room) + " bits");
     }
 
     if (not quant.zero_point) return;

@@ -43,21 +43,35 @@ public:
          *        Stored as a non-negative index (the importer normalizes negative ONNX axes).
          */
         std::optional<std::size_t> axis;
+
+        /**
+         * @brief Width in bits of the code range this mapping is defined over.
+         *
+         * Not the width the codes are STORED in. The two agree once a region actually holds
+         * codes, but they part company on fake-quant metadata: a float region describing an
+         * 8-bit mapping has an f32 #encoding and a bitwidth of 8, and the bitwidth is then the
+         * only thing left saying what the values were quantized for. A reader deciding between
+         * kernels before the weights are converted has nothing else to ask.
+         *
+         * Zero is not a bitwidth. validate() refuses it rather than let a mapping nobody filled
+         * in pass for an 8-bit one.
+         */
+        std::uint8_t bitwidth{};
     };
 
     struct format
     {
         std::string                 name;
         EDataType                   encoding{EDataType::invalid};
-        lnpu::layout                 layout;
+        lnpu::layout                layout;
         std::optional<quantization> quant;
     };
 
     class slice;
 
 private:
-    buffer::shared    m_buffer;
-    format            m_format;
+    buffer::shared     m_buffer;
+    format             m_format;
     lnpu::layout const m_initial_layout;
 
     /**

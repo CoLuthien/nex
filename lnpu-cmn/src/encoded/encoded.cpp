@@ -294,7 +294,7 @@ encoded::encoded(format&& format, buffer::shared buffer)
     // rather than a dispatch -- see scale() / zero_point().
     if (m_format.quant)
     {
-        detail::validate(*m_format.quant, m_format.name);
+        detail::validate(*m_format.quant, m_format.encoding, m_format.name);
     }
 }
 

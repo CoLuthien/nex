@@ -49,13 +49,18 @@ std::span<std::int32_t const> zero_point_of(encoded::format const& fmt);
  * rather than a dispatch. An importer that has them in another form converts once, at the
  * boundary, with cast<T>(); every reader downstream then gets a plain span.
  *
- * This checks how the parameters are STORED, not whether they describe the region correctly --
- * a per-channel count is only meaningful against an axis, and take() may narrow that axis on
- * purpose. resolve_affine() is where that pairing is checked.
+ * This checks how the parameters are STORED, plus the one thing about the pairing with
+ * @p encoding that can never come good later: a code range wider than the encoding storing it.
+ * Whether the per-channel COUNT describes the region is a different question -- it is only
+ * meaningful against an axis, and take() may narrow that axis on purpose, so resolve_affine()
+ * is where it gets asked.
  *
- * @throws std::invalid_argument on a null scale, or on a scale, zero_point or shape that does
- *         not meet the above.
+ * @param encoding how the region itself is stored, which bounds the code range only when it
+ *        stores codes at all; fake-quant metadata on a float region is left alone.
+ *
+ * @throws std::invalid_argument on a null scale, a scale/zero_point/shape that does not meet
+ *         the above, a zero bitwidth, or a bitwidth @p encoding has no room for.
  */
-void validate(encoded::quantization const& quant, std::string const& name);
+void validate(encoded::quantization const& quant, EDataType encoding, std::string const& name);
 
 } // namespace lnpu::detail

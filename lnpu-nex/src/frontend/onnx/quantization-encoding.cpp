@@ -74,14 +74,8 @@ scales_of(json const& entry, std::string const& name)
     return scales;
 }
 
-/**
- * @brief The zero points of @p entry, negated into our convention.
- *
- * AIMET dequantizes as (code + offset) * scale, we as (code - zero_point) * scale, so one is the
- * negation of the other.
- */
 std::vector<std::int32_t>
-zero_points_of(json const& entry, std::size_t expected, std::string const& name)
+offsets_of(json const& entry, std::size_t expected, std::string const& name)
 {
     auto const& listed = entry.at("offset");
     if (not listed.is_array() or listed.size() != expected)
@@ -91,14 +85,66 @@ zero_points_of(json const& entry, std::size_t expected, std::string const& name)
                                  " offset(s) against " + std::to_string(expected) + " scale(s)");
     }
 
-    std::vector<std::int32_t> zero_points{};
-    zero_points.reserve(listed.size());
+    std::vector<std::int32_t> offsets{};
+    offsets.reserve(listed.size());
     for (auto const& offset : listed)
     {
-        zero_points.emplace_back(-offset.get<std::int32_t>());
+        offsets.emplace_back(offset.get<std::int32_t>());
     }
 
-    return zero_points;
+    return offsets;
+}
+
+std::uint8_t
+bitwidth_of(json const& entry, std::string const& name)
+{
+    auto const bits = entry.at("bw").get<std::int64_t>();
+
+    // encoded::quantization::bitwidth is a uint8_t and detail::validate() bounds it again; this
+    // is only here so a nonsense value is named by the file it came from rather than by a region
+    // built much later out of it.
+    if (bits < 1 or bits > 32)
+    {
+        throw std::runtime_error("[nx::encodings] '" + name + "' is " + std::to_string(bits) +
+                                 " bits wide; a code range is 1 to 32 bits");
+    }
+
+    return static_cast<std::uint8_t>(bits);
+}
+
+/**
+ * @brief Refuses a symmetric entry whose offset is not the one dropping the zero point assumes.
+ *
+ * This is the check that keeps two storage conventions from being confused for each other, so it
+ * is worth spelling out. AIMET dequantizes as (code + offset) * scale over an UNSIGNED code, and
+ * a non-strict symmetric range puts offset at -2^(bw-1): code 0 means the most negative value.
+ * We drop the zero point instead (see read_entry), which is the same mapping only if the code
+ * has been re-stored SIGNED -- shifted down by that same 2^(bw-1).
+ *
+ * Nothing downstream can notice the difference: every value would simply be 2^(bw-1) * scale too
+ * large, which crashes nothing and still looks like a plausible tensor. So the moment the offset
+ * stops being the one that shift assumes -- a strict_symmetric export uses -(2^(bw-1) - 1), an
+ * unsigned_symmetric one uses 0 -- the file has to be refused rather than read as if it were the
+ * layout we know.
+ */
+void
+expect_shifted_offsets(std::vector<std::int32_t> const& offsets,
+                       std::uint8_t                     bitwidth,
+                       std::string const&               name)
+{
+    auto const expected = -(std::int32_t{1} << (bitwidth - 1));
+
+    for (std::size_t at = 0; at < offsets.size(); ++at)
+    {
+        if (offsets[at] != expected)
+        {
+            throw std::runtime_error(
+                "[nx::encodings] '" + name + "' is symmetric at " + std::to_string(bitwidth) +
+                " bits, so every offset should be " + std::to_string(expected) + ", but entry " +
+                std::to_string(at) + " is " + std::to_string(offsets[at]) +
+                "; this export does not use the symmetric range this reader converts");
+        }
+    }
 }
 
 quantization
@@ -118,16 +164,28 @@ read_entry(json const& entry, std::string const& name)
     }
 
     quantization parameters{};
-    parameters.scale = as_parameter(scales, EDataType::f32, per_channel, name + " [scale]");
+    parameters.bitwidth = bitwidth_of(entry, name);
+    parameters.scale    = as_parameter(scales, EDataType::f32, per_channel, name + " [scale]");
 
-    // A symmetric quantization has no zero point to store: every entry would be zero, which is
-    // what an absent zero_point already means.
-    if (not symmetric)
+    auto const offsets = offsets_of(entry, scales.size(), name);
+
+    if (symmetric)
     {
-        parameters.zero_point = as_parameter(zero_points_of(entry, scales.size(), name),
-                                             EDataType::i32,
-                                             per_channel,
-                                             name + " [zero_point]");
+        // No zero point to store: every entry would be zero, which is what an absent zero_point
+        // already means -- but only for a code the converter re-stores signed. Hence the check.
+        expect_shifted_offsets(offsets, parameters.bitwidth, name);
+    }
+    else
+    {
+        std::vector<std::int32_t> zero_points{};
+        zero_points.reserve(offsets.size());
+        for (auto const offset : offsets)
+        {
+            zero_points.emplace_back(-offset);
+        }
+
+        parameters.zero_point =
+            as_parameter(zero_points, EDataType::i32, per_channel, name + " [zero_point]");
     }
 
     // AIMET quantizes a parameter per output channel and never says along which axis, because
