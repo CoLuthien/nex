@@ -72,7 +72,7 @@ user_metadata(xrt::xclbin const& binary)
     auto const* top = binary.get_axlf();
     if (top == nullptr) return {};
 
-    for (int at = 0; at < top->m_header.m_numSections; ++at)
+    for (std::uint32_t at = 0; at < top->m_header.m_numSections; ++at)
     {
         auto const& header = top->m_sections[at];
         if (header.m_sectionKind != static_cast<std::uint32_t>(USER_METADATA)) continue;
@@ -271,8 +271,8 @@ describe_signature(xrt::xclbin const& binary, std::string const& kernel)
         std::printf("  커널 인자 %zu개:\n", one.get_num_args());
         for (auto const& arg : one.get_args())
         {
-            std::printf("    [%d] %-8s size=%zu offset=%zu host_type=%s\n",
-                        arg.get_index(),
+            std::printf("    [%zu] %-8s size=%zu offset=%zu host_type=%s\n",
+                        static_cast<std::size_t>(arg.get_index()),
                         arg.get_name().c_str(),
                         arg.get_size(),
                         arg.get_offset(),
@@ -316,7 +316,12 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
 
     auto const stream_bytes = stream.size() * sizeof(command::word);
     auto       insts_bo     = step("bo(insts, cacheable)", [&] {
-        return xrt::bo{device, stream_bytes, xrt::bo::flags::cacheable, plain.group_id(1)};
+        // group_id() answers with an int and the constructor wants a memory_group, which a
+        // braced initializer will not narrow for us.
+        return xrt::bo{device,
+                       stream_bytes,
+                       xrt::bo::flags::cacheable,
+                       static_cast<xrt::memory_group>(plain.group_id(1))};
     });
     std::memcpy(insts_bo.map(), stream.data(), stream_bytes);
     insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
