@@ -34,6 +34,27 @@ struct design
     /// Columns the design actually spreads work over.
     std::uint32_t columns{};
 
+    /// Core rows a column puts to work, counted from the first compute row.
+    std::uint32_t rows{};
+
+    /// The first compute row. Row 0 is the shim and row 1 the mem tile, so cores start at 2.
+    std::uint32_t first_core_row{2};
+
+    /**
+     * @brief Where in a core's data memory its runtime parameters live.
+     *
+     * A design whose cores loop a number of times the instruction stream decides reads those
+     * counts from here. The compiler puts the buffer wherever it had room -- the same operator
+     * compiled with a different tile size lands at a different address -- so this cannot be
+     * worked out from the operation and has to come with the design.
+     *
+     * Empty for a design whose cores need telling nothing.
+     */
+    std::vector<std::uint32_t> parameter_slots;
+
+    /// Register that releases a core once what it reads from is configured.
+    std::uint32_t start_register{};
+
     /// The order kernel arguments appear in, which is the order ddr_patch indexes them by.
     /// Getting this wrong reads the wrong buffer and nothing complains.
     std::vector<std::string> args;

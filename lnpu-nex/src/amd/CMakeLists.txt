@@ -26,8 +26,10 @@ PRIVATE
     commands/ddr-patch.cpp
     commands/issue-token.cpp
     commands/queue-push.cpp
+    commands/register-write.cpp
     commands/tct-wait.cpp
 
+    programs/gemm.cpp
     programs/rmsnorm.cpp
 )
 
