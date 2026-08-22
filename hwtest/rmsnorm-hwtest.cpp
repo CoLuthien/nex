@@ -326,109 +326,118 @@ run_case(xrt::device& device, case_inputs const& built, int repeats)
     std::memcpy(insts_bo.map(), stream.data(), stream_bytes);
     insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-    auto in_bo  = step("bo(input)", [&] { return xrt::ext::bo{device, input.size()}; });
-    auto out_bo = step("bo(output)", [&] { return xrt::ext::bo{device, golden.size()}; });
-
-    std::memcpy(in_bo.map(), input.data(), input.size());
-    std::memset(out_bo.map(), 0, golden.size());
-    in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-    out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-
-    // A weightless design has no third buffer; xrt::ext::bo has no empty state, so the slot is
-    // filled with a one-byte buffer that is never handed to the kernel.
-    auto weight_bo = step("bo(weight)", [&] {
-        return xrt::ext::bo{device, weighted ? weight.size() : std::size_t{4}};
-    });
-    if (weighted)
+    // How the data buffers are made is the remaining unknown. The legacy flow runs, but the
+    // results come back untouched, and a buffer the device cannot reach would look exactly like
+    // that. Both ways are tried in one go rather than one per trip to the hardware.
+    struct allocator
     {
-        std::memcpy(weight_bo.map(), weight.data(), weight.size());
-        weight_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-    }
+        char const*                         what;
+        std::function<xrt::bo(std::size_t)> make;
+    };
 
-    // Two ways to hand over the arguments, because it is not settled which one an ELF-flow kernel
-    // wants. The three leading scalars are what the xclbin's signature asks for and what
-    // FastFlowLM passes, but the module already carries the instructions, so they may be the
-    // driver's business rather than ours. Whichever one runs is the answer.
+    std::vector<allocator> const allocators{
+        {"xrt::bo host_only grp0",
+         [&](std::size_t size) {
+             return xrt::bo{device, size, xrt::bo::flags::host_only, xrt::memory_group{0}};
+         }},
+        {"xrt::ext::bo(device)",
+         [&](std::size_t size) { return xrt::bo{xrt::ext::bo{device, size}}; }},
+        {"xrt::ext::bo(hw_context)",
+         [&](std::size_t size) { return xrt::bo{xrt::ext::bo{context, size}}; }},
+    };
+
     constexpr std::uint64_t kStartNpu = 3;
 
-    auto with_scalars = [&] {
-        return weighted ? kernel(kStartNpu, 0, 0, in_bo, weight_bo, out_bo)
-                        : kernel(kStartNpu, 0, 0, in_bo, out_bo);
-    };
-    auto buffers_only = [&] {
-        return weighted ? kernel(in_bo, weight_bo, out_bo) : kernel(in_bo, out_bo);
-    };
-    // mlir-aie passes the buffer's size in bytes here, not the word count.
-    auto legacy = [&] {
-        return weighted ? plain(kStartNpu, insts_bo, stream_bytes, in_bo, weight_bo, out_bo)
-                        : plain(kStartNpu, insts_bo, stream_bytes, in_bo, out_bo);
-    };
+    bool ok = false;
 
-    ert_cmd_state state{};
-    bool          ran = false;
-    char const*   how = "";
-
-    for (auto const& [label, launch] :
-         {std::pair<char const*, std::function<xrt::run()>>{"elf (3,0,0,bo..)", with_scalars},
-          std::pair<char const*, std::function<xrt::run()>>{"elf (bo.. 만)", buffers_only},
-          std::pair<char const*, std::function<xrt::run()>>{"legacy (3,insts_bo,n,bo..)", legacy}})
+    for (auto const& how : allocators)
     {
+        std::printf("  -- 버퍼: %s\n", how.what);
+        std::fflush(stdout);
+
+        xrt::bo in_bo{}, out_bo{}, weight_bo{}, insts_bo{};
         try
         {
-            std::printf("  .. 실행 %s\n", label);
-            std::fflush(stdout);
-            auto run = launch();
-            state    = run.wait();
-            ran      = true;
-            how      = label;
-            break;
+            in_bo     = how.make(input.size());
+            out_bo    = how.make(golden.size());
+            weight_bo = how.make(weighted ? weight.size() : std::size_t{4});
+            insts_bo  = xrt::bo{device,
+                                stream.size() * sizeof(command::word),
+                                xrt::bo::flags::cacheable,
+                                static_cast<xrt::memory_group>(plain.group_id(1))};
         }
         catch (std::exception const& failure)
         {
-            std::printf("     거부: %s\n", failure.what());
+            std::printf("     할당 실패: %s\n", failure.what());
+            continue;
         }
-    }
 
-    if (not ran)
-    {
-        std::printf("  두 방식 모두 실패\n");
-        return false;
-    }
+        std::memcpy(insts_bo.map(), stream.data(), stream.size() * sizeof(command::word));
+        std::memcpy(in_bo.map(), input.data(), input.size());
+        std::memset(out_bo.map(), 0, golden.size());
+        if (weighted) std::memcpy(weight_bo.map(), weight.data(), weight.size());
 
-    std::printf("  실행됨 %s, 상태 %d (4 = COMPLETED)\n", how, static_cast<int>(state));
+        insts_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        if (weighted) weight_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
-    out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        auto const words = static_cast<std::uint32_t>(stream.size() * sizeof(command::word));
 
-    auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()),
-                                golden.size() / sizeof(std::uint16_t)};
-    auto const want = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()),
-                                golden.size() / sizeof(std::uint16_t)};
+        auto launch = [&] {
+            return weighted ? plain(kStartNpu, insts_bo, words, in_bo, weight_bo, out_bo)
+                            : plain(kStartNpu, insts_bo, words, in_bo, out_bo);
+        };
 
-    auto const off = compare(got, want, 0.04F, 1e-6F);
-    std::printf("  최대 상대오차 %.4g (원소 %zu, 절대 %.4g), 허용 밖 %zu / %zu\n",
-                static_cast<double>(off.worst_rel),
-                off.worst_at,
-                static_cast<double>(off.worst_abs),
-                off.outside,
-                want.size());
-
-    if (repeats > 0)
-    {
-        auto const started = std::chrono::steady_clock::now();
-        for (int at = 0; at < repeats; ++at)
+        ert_cmd_state state{};
+        try
         {
-            (std::string_view{how}.starts_with("legacy")                     ? legacy()
-             : std::string_view{how}.find("3,0,0") != std::string_view::npos ? with_scalars()
-                                                                             : buffers_only())
-                .wait();
+            state = launch().wait();
         }
-        auto const spent =
-            std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - started)
-                .count();
-        std::printf("  %d회 평균 %.1f us\n", repeats, spent / repeats);
+        catch (std::exception const& failure)
+        {
+            std::printf("     실행 거부: %s\n", failure.what());
+            continue;
+        }
+
+        out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+
+        auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()),
+                                    golden.size() / sizeof(std::uint16_t)};
+        auto const want = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()),
+                                    golden.size() / sizeof(std::uint16_t)};
+
+        std::printf("     상태 %d  나온 값", static_cast<int>(state));
+        for (std::size_t at = 0; at < 4 and at < got.size(); ++at)
+            std::printf(" %8.4f", static_cast<double>(from_bf16(got[at])));
+        std::printf("   정답");
+        for (std::size_t at = 0; at < 4 and at < want.size(); ++at)
+            std::printf(" %8.4f", static_cast<double>(from_bf16(want[at])));
+        std::printf("\n");
+
+        auto const off = compare(got, want, 0.04F, 1e-6F);
+        std::printf("     최대 상대오차 %.4g, 허용 밖 %zu / %zu\n",
+                    static_cast<double>(off.worst_rel),
+                    off.outside,
+                    want.size());
+
+        if (off.outside == 0)
+        {
+            ok = true;
+            if (repeats > 0)
+            {
+                auto const started = std::chrono::steady_clock::now();
+                for (int at = 0; at < repeats; ++at)
+                    launch().wait();
+                auto const spent = std::chrono::duration<double, std::micro>(
+                                       std::chrono::steady_clock::now() - started)
+                                       .count();
+                std::printf("     %d회 평균 %.1f us\n", repeats, spent / repeats);
+            }
+            break;
+        }
     }
 
-    bool const ok = off.outside == 0;
     std::printf("  %s\n", ok ? "통과" : "실패");
     return ok;
 }
