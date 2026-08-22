@@ -1,15 +1,17 @@
 {
- "schema": 1,
  "op": "rmsnorm",
- "generation": "npu2",
- "partition_columns": 8,
  "columns": 4,
  "channels": 1,
+ "tile": 1024,
+ "elements": 4096,
  "weighted": false,
  "element": "bf16",
  "element_bytes": 2,
  "args": [
   "input",
   "output"
- ]
+ ],
+ "schema": 1,
+ "generation": "npu2",
+ "partition_columns": 8
 }

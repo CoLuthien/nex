@@ -42,6 +42,12 @@ public:
     {
         amd::design design;
 
+        /// How the design lays its cores out. Facts about the xclbin, not about the shape --
+        /// they move into gemm::design once describe() reads them out of the descriptor, which
+        /// already carries both. Here only so the tree builds while that lands.
+        std::uint32_t rows{};
+        std::uint32_t first_core_row{2};
+
         /// One core's tile, as the design was compiled for it.
         std::uint32_t tile_m{};
         std::uint32_t tile_k{};

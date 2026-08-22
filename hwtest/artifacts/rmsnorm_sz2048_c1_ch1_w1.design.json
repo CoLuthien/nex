@@ -1,10 +1,9 @@
 {
- "schema": 1,
  "op": "rmsnorm",
- "generation": "npu2",
- "partition_columns": 8,
  "columns": 1,
  "channels": 1,
+ "tile": 2048,
+ "elements": 2048,
  "weighted": true,
  "element": "bf16",
  "element_bytes": 2,
@@ -12,5 +11,8 @@
   "input",
   "weight",
   "output"
- ]
+ ],
+ "schema": 1,
+ "generation": "npu2",
+ "partition_columns": 8
 }

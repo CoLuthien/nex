@@ -69,7 +69,7 @@ gemm::k_steps() const
 std::uint32_t
 gemm::tile_steps() const
 {
-    auto const block = m_param.tile_m * m_param.design.rows;
+    auto const block = m_param.tile_m * m_param.rows;
     auto const wide  = m_param.tile_n * m_param.design.columns;
     if (block == 0 or wide == 0) return 0;
     return (m_param.m / block) * (m_param.n / wide);
@@ -88,7 +88,7 @@ gemm::wire(command_list& sequence) const
     auto const& design = m_param.design;
 
     auto const columns = design.columns;
-    auto const rows    = design.rows;
+    auto const rows    = m_param.rows;
     auto const bytes   = m_param.element_bytes;
 
     if (columns == 0 or rows == 0 or bytes == 0) return failure(std::errc::invalid_argument);
@@ -142,7 +142,7 @@ gemm::wire(command_list& sequence) const
         for (std::uint32_t column = 0; column < columns; ++column)
         {
             npu::placement const core{
-                .location = {.col = column, .row = design.first_core_row + row}};
+                .location = {.col = column, .row = m_param.first_core_row + row}};
 
             for (std::uint32_t slot = 0; slot < 2; ++slot)
             {
@@ -159,7 +159,7 @@ gemm::wire(command_list& sequence) const
         for (std::uint32_t column = 0; column < columns; ++column)
         {
             sequence.record(
-                npu::placement{.location = {.col = column, .row = design.first_core_row + row}},
+                npu::placement{.location = {.col = column, .row = m_param.first_core_row + row}},
                 make<commands::register_write>(commands::register_write::parameters{
                     .address = design.start_register, .value = 1}));
         }

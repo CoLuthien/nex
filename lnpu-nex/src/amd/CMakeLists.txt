@@ -29,6 +29,8 @@ PRIVATE
     commands/register-write.cpp
     commands/tct-wait.cpp
 
+    descriptor.cpp
+
     programs/gemm.cpp
     programs/rmsnorm.cpp
 )

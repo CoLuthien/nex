@@ -9,6 +9,7 @@
 // Everything the backend needs is in headers with no XRT of their own, so this builds against
 // XRT and spdlog alone -- no protobuf, no onnx, none of the rest of the tree.
 
+#include "amd/descriptor.hpp"
 #include "amd/device.hpp"
 #include "amd/programs/rmsnorm.hpp"
 
@@ -86,23 +87,6 @@ user_metadata(xrt::xclbin const& binary)
                 static_cast<std::size_t>(header.m_sectionSize)};
     }
     return {};
-}
-
-/// Enough of a json reader for flat "key": value pairs; the descriptor has nothing nested.
-long
-number_in(std::string_view json, std::string_view key)
-{
-    auto const at = json.find("\"" + std::string{key} + "\"");
-    if (at == std::string_view::npos) throw std::runtime_error("no '" + std::string{key} + "'");
-    return std::strtol(json.data() + json.find(':', at) + 1, nullptr, 10);
-}
-
-bool
-flag_in(std::string_view json, std::string_view key)
-{
-    auto const at = json.find("\"" + std::string{key} + "\"");
-    if (at == std::string_view::npos) throw std::runtime_error("no '" + std::string{key} + "'");
-    return json.find("true", at) < json.find(',', at);
 }
 
 void
@@ -210,10 +194,14 @@ run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
     auto const metadata = user_metadata(binary);
     if (metadata.empty()) throw std::runtime_error("xclbin carries no USER_METADATA");
 
-    auto const columns  = static_cast<std::uint32_t>(number_in(metadata, "columns"));
-    auto const channels = static_cast<std::uint32_t>(number_in(metadata, "channels"));
-    auto const bytes    = static_cast<std::uint32_t>(number_in(metadata, "element_bytes"));
-    auto const weighted = flag_in(metadata, "weighted");
+    auto const design = descriptor::parse(metadata);
+    if (design.op() != "rmsnorm")
+        throw std::runtime_error("this test runs rmsnorm, not '" + std::string{design.op()} + "'");
+
+    auto const common   = design.common();
+    auto const channels = design.u32("channels");
+    auto const bytes    = design.u32("element_bytes");
+    auto const weighted = design.flag("weighted");
 
     auto const input  = read_file(dir / (name + ".input.bin"));
     auto const golden = read_file(dir / (name + ".golden.bin"));
@@ -222,29 +210,52 @@ run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
     auto const elements = static_cast<std::uint32_t>(input.size() / bytes);
 
     say("설계 (xclbin USER_METADATA)");
-    std::printf("     columns=%u channels=%u weighted=%s element_bytes=%u 원소 %u개\n",
-                columns,
+    std::printf("     columns=%u channels=%u tile=%u elements=%u weighted=%s element_bytes=%u\n",
+                common.columns,
                 channels,
+                design.u32("tile"),
+                design.u32("elements"),
                 weighted ? "yes" : "no",
-                bytes,
-                elements);
+                bytes);
+
+    // The design fixes the size: its cores loop a count that is a compile-time constant in the
+    // IRON design, not a runtime parameter, so a design runs exactly one length. Feeding it a
+    // longer input does not run longer -- it runs the first slice and leaves the rest untouched,
+    // which looks like a partly-correct answer rather than a failure.
+    if (elements != design.u32("elements"))
+    {
+        std::printf("     입력이 %u 원소인데 설계는 %u 원소용이다\n",
+                    elements,
+                    design.u32("elements"));
+        return false;
+    }
+
+    std::printf("     인자 순서");
+    for (auto const* which : {"input", "weight", "output"})
+    {
+        if (not weighted and std::string_view{which} == "weight") continue;
+        std::printf("  %s=%u", which, design.argument(which));
+    }
+    std::printf("\n");
+
     describe_signature(binary);
 
     // ---- the instruction stream, built here by the program the runtime uses
     say("명령 스트림 합성 (amd::programs::rmsnorm)");
 
     programs::rmsnorm::parameters param{};
-    param.design.op                = "rmsnorm";
-    param.design.generation        = npu::npu2;
-    param.design.partition_columns = 8;
-    param.design.columns           = columns;
-    param.channels                 = channels;
-    param.elements                 = elements;
-    param.element_bytes            = bytes;
-    param.weighted                 = weighted;
-    param.input                    = {.argument_index = 0};
-    param.weight                   = {.argument_index = 1};
-    param.output                   = {.argument_index = weighted ? 2U : 1U};
+    param.design        = common;
+    param.channels      = channels;
+    param.elements      = elements;
+    param.element_bytes = bytes;
+    param.weighted      = weighted;
+
+    // Taken from the descriptor rather than counted by hand. The two rmsnorm designs disagree
+    // about where output sits -- index 2 when there is a weight stream and 1 when there is not --
+    // and an index off by one reads a different buffer without complaint.
+    param.input  = {.argument_index = design.argument("input")};
+    param.output = {.argument_index = design.argument("output")};
+    if (weighted) param.weight = {.argument_index = design.argument("weight")};
 
     programs::rmsnorm const emitter{param};
 
@@ -253,7 +264,7 @@ run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
                 emitter.slice(),
                 emitter.buffer_descriptors_used());
 
-    auto sequence = std::make_unique<command_list>(npu::npu2, 8);
+    auto sequence = std::make_unique<command_list>(common.generation, common.partition_columns);
     if (auto const refused = emitter.wire(*sequence))
     {
         std::printf("     wire 거부: %s\n", refused.message().c_str());

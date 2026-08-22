@@ -27,6 +27,7 @@ add_executable(rmsnorm-hwtest
     rmsnorm-hwtest.cpp
 
     ${NEX_SRC}/amd/command.cpp
+    ${NEX_SRC}/amd/descriptor.cpp
     ${NEX_SRC}/amd/commands/block-write.cpp
     ${NEX_SRC}/amd/commands/ddr-patch.cpp
     ${NEX_SRC}/amd/commands/issue-token.cpp

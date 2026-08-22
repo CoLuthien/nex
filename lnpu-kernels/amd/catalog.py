@@ -63,7 +63,16 @@ def _rmsnorm(columns: int, channels: int, size: int, weighted: bool) -> Entry:
         descriptor={
             "op": "rmsnorm",
             "columns": columns,
+            # Streams a column carries, which is also cores per column for the unweighted
+            # design. Not rows: the weighted one runs two cores per channel, and where its
+            # placer put them is not something this can state.
             "channels": channels,
+            # What one core normalizes in one pass, and the total the design was baked for.
+            # Both are here because neither follows from the other: the core loops
+            # elements / (columns * channels * tile) times, and that count is a python-level
+            # constant in the design, not a runtime parameter. So a design runs one size.
+            "tile": tile,
+            "elements": size,
             "weighted": weighted,
             "element": "bf16",
             "element_bytes": 2,
