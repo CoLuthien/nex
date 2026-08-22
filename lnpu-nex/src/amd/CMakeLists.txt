@@ -27,6 +27,8 @@ PRIVATE
     commands/issue-token.cpp
     commands/queue-push.cpp
     commands/tct-wait.cpp
+
+    programs/rmsnorm.cpp
 )
 
 
