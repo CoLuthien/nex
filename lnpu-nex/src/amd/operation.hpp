@@ -70,6 +70,29 @@ public:
     /// What the xclbin says about itself. A program's describe() reads its fields out of this.
     descriptor const& metadata() const { return m_descriptor; }
 
+    /**
+     * @brief Builds a program against this design.
+     *
+     * The pairing between a program and the design it was baked for is settled here, and this is
+     * the only place it can go wrong: describe() reads the descriptor and refuses one belonging
+     * to another operator. After that the program carries its design as a value and the pairing
+     * is a fact rather than a convention the caller has to keep.
+     *
+     * One operation serves as many programs as the model has calls to it -- a single gemm xclbin
+     * runs every projection -- so this is called per call site, not once per xclbin.
+     *
+     * This is convenience, not the only way in: Program{design, parameters} stays public, so a
+     * reference test builds and checks the same program from a descriptor literal without an
+     * array to open.
+     *
+     * @throws whatever Program::describe() throws.
+     */
+    template <typename Program>
+    std::shared_ptr<Program> make(typename Program::parameters shape) const
+    {
+        return std::make_shared<Program>(Program::describe(m_descriptor), std::move(shape));
+    }
+
     class instance;
     std::unique_ptr<instance> create_instance(command_list::unique commands);
 };

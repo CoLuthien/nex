@@ -23,6 +23,7 @@ XRT 를 직접 부르지 않는다. 스트림은 `amd::programs::rmsnorm` 이 �
 | 대조 | aiecc 스트림과 바이트 비교. **다르면 거기서 멈춘다** — 하드웨어가 할 말이 없다 |
 | `amd::device` | 생성 |
 | `load_op` | `register_xclbin` + `hw_context` |
+| `make<rmsnorm>` | operation 이 xclbin 에서 읽은 설계로 다시 배선. **오프라인 스트림과 바이트 비교** — 두 경로가 설계를 다르게 읽으면 여기서 걸린다 |
 | `create_instance` | aiebu → ELF → module → kernel (`operation.cpp` 안에서) |
 | 버퍼 | 크기와 디바이스 주소 |
 | `execute` | 완료 상태를 `std::error_code` 로 확인 |

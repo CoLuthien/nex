@@ -284,8 +284,33 @@ run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
         return false;
     }
 
+    // The same program, this time built the way the runtime builds one: from the operation,
+    // which read the design out of the xclbin it opened. The stream above came from a descriptor
+    // this test parsed itself, so a difference here would mean the two paths disagree about the
+    // design -- and only one of them is the one that runs.
+    say("make<rmsnorm> (operation 이 읽은 설계로)");
+    auto const through_op = loaded->make<programs::rmsnorm>(param);
+
+    auto again = std::make_unique<command_list>(fixed.common.generation,
+                                                fixed.common.partition_columns);
+    if (auto const refused = through_op->wire(*again))
+    {
+        std::printf("     wire 거부: %s\n", refused.message().c_str());
+        return false;
+    }
+    if (not again->finalize()) throw std::runtime_error("finalize failed");
+
+    {
+        auto const offline = sequence->as_instructions();
+        auto const online  = again->as_instructions();
+        bool const same    = offline.size() == online.size() and
+                          std::memcmp(offline.data(), online.data(), offline.size_bytes()) == 0;
+        std::printf("     오프라인 스트림과 %s\n", same ? "바이트 일치" : "다름 (!)");
+        if (not same) return false;
+    }
+
     say("create_instance (aiebu -> elf -> module -> kernel)");
-    auto running = loaded->create_instance(std::move(sequence));
+    auto running = loaded->create_instance(std::move(again));
 
     // ---- buffers
     say("버퍼 (xrt::bo host_only)");
