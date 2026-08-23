@@ -28,6 +28,23 @@ struct options
     fs::path dir;
     int      repeats{100};
     bool     dry{false};
+
+    /// Only cases whose label contains this. Empty runs everything.
+    std::string only;
+
+    /**
+     * @brief Open a hardware context per case rather than per design.
+     *
+     * Off, a design's shapes share one context, which is the arrangement the runtime will use and
+     * the claim the design makes. On, each shape gets its own, which is what separates "this
+     * shape cannot run" from "this shape cannot run after that one". The device is the same
+     * either way -- it is the context that is in question.
+     *
+     * A diagnostic, not a pattern to copy. A context per shape does not scale: the driver holds
+     * sixteen at once and a model has far more shapes than that. If it turns out to be the only
+     * way a shape runs, that is a cost to plan around, not an arrangement to adopt.
+     */
+    bool isolate{false};
 };
 
 void say(char const* what);
@@ -59,23 +76,41 @@ public:
     void fill(std::span<std::uint16_t> into);
 };
 
+/**
+ * @brief How far a result sits from its reference, measured every way that says something.
+ *
+ * Three numbers rather than one, because no single one of them settles a GEMM. Per-element
+ * relative error is what you want for a normalization, where every output is the same size as
+ * its input; it is useless for a dot product, whose result is a sum of signed terms far larger
+ * than itself, so an output that lands near zero shows an enormous relative error while being
+ * perfectly good. #relative_l2 is the one to judge that by: it weighs each error by how much of
+ * the answer it is, over the whole result at once.
+ */
 struct deviation
 {
-    std::size_t worst_at{};
+    std::size_t worst_rel_at{};
     float       worst_rel{};
+
+    std::size_t worst_abs_at{};
     float       worst_abs{};
+
+    /// ||got - want|| / ||want||, over the whole result.
+    double relative_l2{};
+
+    /// Elements outside both tolerances at once.
     std::size_t outside{};
+
     std::size_t zeros{};
 };
 
-deviation compare(std::span<std::uint16_t const> got,
+deviation measure(std::span<std::uint16_t const> got,
                   std::span<std::uint16_t const> want,
                   float                          rel_tol,
                   float                          abs_tol);
 
-/// Prints the comparison and says whether it passed. Names the all-zero case, which means the
-/// kernel never wrote the buffer rather than that it computed zeros.
-bool report(deviation const& off, std::size_t total);
+/// Prints every measure. Names the all-zero case, which means the kernel never wrote the buffer
+/// rather than that it computed zeros.
+void print(deviation const& off, std::size_t total);
 
 /// Prints the first few of each, so a layout that is wrong end-to-end is visible at a glance.
 void show_head(std::span<std::uint16_t const> got, std::span<std::uint16_t const> want);

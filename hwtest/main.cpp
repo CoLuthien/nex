@@ -98,6 +98,11 @@ run_one(fs::path const& xclbin, hw::options const& how, tally& count)
     {
         // One design, one length: the count is baked into the cores, so there is one case here
         // however many streams happen to sit beside it.
+        if (not how.only.empty() and xclbin.stem().string().find(how.only) == std::string::npos)
+        {
+            return;
+        }
+
         std::printf("\n=== %s\n", xclbin.stem().string().c_str());
         ++count.ran;
         if (hw::run_rmsnorm(xclbin, references.empty() ? fs::path{} : references.front(), how))
@@ -112,11 +117,13 @@ run_one(fs::path const& xclbin, hw::options const& how, tally& count)
         std::vector<hw::gemm_case> shapes{};
         for (auto const& reference : references)
         {
+            auto const named = reference.filename().string();
+            if (not how.only.empty() and named.find(how.only) == std::string::npos) continue;
+
             hw::gemm_case shape{};
-            if (not shape_in(reference.filename().string(), shape))
+            if (not shape_in(named, shape))
             {
-                std::printf("  %s 는 shape 를 이름에 담고 있지 않아 건너뛴다\n",
-                            reference.filename().string().c_str());
+                std::printf("  %s 는 shape 를 이름에 담고 있지 않아 건너뛴다\n", named.c_str());
                 continue;
             }
             shape.reference = reference;
@@ -125,7 +132,10 @@ run_one(fs::path const& xclbin, hw::options const& how, tally& count)
 
         if (shapes.empty())
         {
-            std::printf("\n=== %s\n  돌릴 shape 가 없다\n", xclbin.stem().string().c_str());
+            if (how.only.empty())
+            {
+                std::printf("\n=== %s\n  돌릴 shape 가 없다\n", xclbin.stem().string().c_str());
+            }
             return;
         }
 
@@ -146,9 +156,59 @@ int
 main(int argc, char** argv)
 {
     hw::options how{};
-    how.dir     = argc > 1 ? argv[1] : "../lnpu-artifacts/amd";
-    how.repeats = argc > 2 ? std::atoi(argv[2]) : 100;
-    how.dry     = argc > 3 and std::string_view{argv[3]} == "--dry";
+    how.dir = "../lnpu-artifacts/amd";
+
+    bool        dir_given = false, repeats_given = false;
+    std::size_t bad       = 0;
+
+    for (int at = 1; at < argc; ++at)
+    {
+        std::string_view const arg{argv[at]};
+
+        if (arg == "--dry")
+        {
+            how.dry = true;
+        }
+        else if (arg == "--isolate")
+        {
+            how.isolate = true;
+        }
+        else if (arg == "--only")
+        {
+            if (at + 1 >= argc)
+            {
+                std::printf("--only 뒤에 문자열이 필요하다\n");
+                return 2;
+            }
+            how.only = argv[++at];
+        }
+        else if (arg.starts_with("--"))
+        {
+            std::printf("모르는 옵션: %.*s\n", static_cast<int>(arg.size()), arg.data());
+            ++bad;
+        }
+        else if (not dir_given)
+        {
+            how.dir   = arg;
+            dir_given = true;
+        }
+        else if (not repeats_given)
+        {
+            how.repeats   = std::atoi(argv[at]);
+            repeats_given = true;
+        }
+        else
+        {
+            std::printf("남는 인자: %.*s\n", static_cast<int>(arg.size()), arg.data());
+            ++bad;
+        }
+    }
+
+    if (bad > 0)
+    {
+        std::printf("사용법: nex-hwtest [디렉터리] [반복] [--dry] [--isolate] [--only <문자열>]\n");
+        return 2;
+    }
 
     if (not fs::is_directory(how.dir))
     {
@@ -157,6 +217,8 @@ main(int argc, char** argv)
     }
 
     std::printf("아티팩트  %s\n", fs::absolute(how.dir).string().c_str());
+    if (not how.only.empty()) std::printf("케이스    '%s' 를 담은 것만\n", how.only.c_str());
+    if (how.isolate) std::printf("격리      shape 마다 hw_context 를 새로 연다 (진단용)\n");
 
     std::vector<fs::path> designs{};
     for (auto const& entry : fs::directory_iterator{how.dir})

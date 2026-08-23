@@ -76,12 +76,16 @@ stream_of_numbers::fill(std::span<std::uint16_t> into)
 }
 
 deviation
-compare(std::span<std::uint16_t const> got,
+measure(std::span<std::uint16_t const> got,
         std::span<std::uint16_t const> want,
         float                          rel_tol,
         float                          abs_tol)
 {
     deviation found{};
+
+    double error_squared = 0.0;
+    double want_squared  = 0.0;
+
     for (std::size_t at = 0; at < want.size(); ++at)
     {
         auto const a   = from_bf16(got[at]);
@@ -89,33 +93,43 @@ compare(std::span<std::uint16_t const> got,
         auto const abs = std::fabs(a - b);
         auto const rel = std::fabs(b) > 0.0F ? abs / std::fabs(b) : abs;
 
+        error_squared += static_cast<double>(abs) * abs;
+        want_squared += static_cast<double>(b) * b;
+
         if (a == 0.0F) ++found.zeros;
         if (rel > found.worst_rel)
         {
-            found.worst_rel = rel;
-            found.worst_abs = abs;
-            found.worst_at  = at;
+            found.worst_rel    = rel;
+            found.worst_rel_at = at;
+        }
+        if (abs > found.worst_abs)
+        {
+            found.worst_abs    = abs;
+            found.worst_abs_at = at;
         }
         if (abs > abs_tol and rel > rel_tol) ++found.outside;
     }
+
+    found.relative_l2 = want_squared > 0.0 ? std::sqrt(error_squared / want_squared) : 0.0;
     return found;
 }
 
-bool
-report(deviation const& off, std::size_t total)
+void
+print(deviation const& off, std::size_t total)
 {
-    std::printf("     최대 상대오차 %.4g (원소 %zu, 절대 %.4g)\n",
+    std::printf("     상대 L2 오차 %.4g\n", off.relative_l2);
+    std::printf("     최대 절대오차 %.4g (원소 %zu)\n",
+                static_cast<double>(off.worst_abs),
+                off.worst_abs_at);
+    std::printf("     최대 상대오차 %.4g (원소 %zu)\n",
                 static_cast<double>(off.worst_rel),
-                off.worst_at,
-                static_cast<double>(off.worst_abs));
+                off.worst_rel_at);
     std::printf("     허용 밖 %zu / %zu, 0 인 원소 %zu개\n", off.outside, total, off.zeros);
 
     if (off.zeros == total)
     {
         std::printf("     (전부 0 -- 커널이 이 버퍼에 쓰지 않았다는 뜻이다)\n");
     }
-
-    return off.outside == 0;
 }
 
 void

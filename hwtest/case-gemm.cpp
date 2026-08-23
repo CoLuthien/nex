@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 namespace hw
 {
@@ -19,15 +20,21 @@ namespace
 using namespace lnpu::nex::amd;
 
 /**
- * @brief How far a result may sit from the reference.
+ * @brief How far the result may sit from the reference, as a fraction of the result.
  *
- * Both sides multiply the same bf16 operands and accumulate in float, so the only difference that
- * should survive is the rounding of the result back to bf16 -- one unit in the last place, which
- * is 2^-8, or 0.39%. The bound is set at roughly twice that rather than at the ULP, because
- * summing in a different order moves the value a little before it is rounded and a result sitting
- * exactly between two bf16 will then round the other way. A wrong layout does not squeak past
- * this: it misses by an order one, not by a last place.
+ * Judged on the relative L2 norm over the whole product, not element by element. A dot product of
+ * signed terms is far smaller than the terms it sums -- with K of 1536 and operands in [-1, 1),
+ * the answer runs around 13 while the absolute values it came from sum to about 500 -- so the
+ * error left by rounding is roughly the same size everywhere, and an output that happens to land
+ * near zero shows an enormous relative error while being perfectly good. Measured on hardware:
+ * absolute errors clustered at 0.06 to 0.16 whatever the output was, which per element reads as
+ * anything from 0.4% to 5000x and as a norm reads as under a percent.
+ *
+ * A wrong layout does not slip through a norm. It misses by an order one, not by a last place.
  */
+constexpr double kRelativeL2 = 0.01;
+
+/// Per-element bounds, reported but not judged on. See kRelativeL2.
 constexpr float kRelativeTolerance = 0.02F;
 constexpr float kAbsoluteTolerance = 1e-3F;
 
@@ -179,24 +186,37 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
 
     // One array, every shape. That is the claim the design makes -- one xclbin serves every
     // projection because the cores read their trip counts out of their own memory -- so it is
-    // tested by running them all against a single hardware context rather than reopening one
-    // per shape and never finding out.
-    std::printf("\n");
+    // tested by running them all against a single hardware context rather than opening one per
+    // shape and never finding out.
+    //
+    // Under --isolate each shape gets a context of its own, which is what separates "this shape
+    // cannot run" from "this shape cannot run after that one". The device stays the same either
+    // way; it is the context that is in question. An operation is one context, so a second one
+    // is a second load_op -- under a key of its own, since the registry keeps one per name.
+    // Only for finding out: sixteen contexts is the driver's limit and a model has more shapes
+    // than that, so nothing in the runtime may work this way.
     say("amd::device 열기");
     lnpu::nex::amd::device owner{0};
 
-    say("load_op (register_xclbin + hw_context)");
-    if (auto const refused = owner.load_op(stem, xrt::xclbin{binary}))
-    {
-        std::printf("     거부: %s\n", refused.message().c_str());
-        return 0;
-    }
+    auto const context_for = [&](std::string const& key) -> operation* {
+        say("load_op (register_xclbin + hw_context)");
+        if (auto const refused = owner.load_op(key, xrt::xclbin{binary}))
+        {
+            std::printf("     거부: %s\n", refused.message().c_str());
+            return nullptr;
+        }
 
-    auto* const loaded = owner.op(stem);
-    if (loaded == nullptr)
+        auto* const found = owner.op(key);
+        if (found == nullptr) std::printf("     op() 가 null 을 돌려줌\n");
+        return found;
+    };
+
+    operation* loaded = nullptr;
+
+    if (not how.isolate)
     {
-        std::printf("     op() 가 null 을 돌려줌\n");
-        return 0;
+        loaded = context_for(stem);
+        if (loaded == nullptr) return 0;
     }
 
     std::size_t passed = 0;
@@ -204,6 +224,12 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
     for (auto& one : ready)
     {
         std::printf("\n  --- %s\n", label_of(one.shape).c_str());
+
+        if (how.isolate)
+        {
+            loaded = context_for(stem + "." + label_of(one.shape));
+            if (loaded == nullptr) continue;
+        }
 
         say("피연산자와 CPU 레퍼런스 만들기");
         auto const started_reference = std::chrono::steady_clock::now();
@@ -277,10 +303,16 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
 
         say("결과");
         show_head(got, want);
-        if (report(compare(got, want, kRelativeTolerance, kAbsoluteTolerance), made.c.size()))
-        {
-            ++passed;
-        }
+
+        auto const off = measure(got, want, kRelativeTolerance, kAbsoluteTolerance);
+        print(off, made.c.size());
+
+        bool const ok = off.relative_l2 <= kRelativeL2;
+        std::printf("     %s (상대 L2 %.4g, 허용 %.4g)\n",
+                    ok ? "통과" : "실패",
+                    off.relative_l2,
+                    kRelativeL2);
+        if (ok) ++passed;
 
         if (how.repeats > 0)
         {

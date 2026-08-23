@@ -195,7 +195,12 @@ run_rmsnorm(fs::path const& xclbin_path, fs::path const& reference, options cons
 
     say("결과");
     show_head(got, want);
-    bool const ok = report(compare(got, want, kRelativeTolerance, kAbsoluteTolerance), count);
+
+    // Every output of a normalization is the size of its input, so per-element relative error is
+    // the right measure here and every element has to pass it.
+    auto const off = measure(got, want, kRelativeTolerance, kAbsoluteTolerance);
+    print(off, count);
+    bool const ok = off.outside == 0;
 
     if (how.repeats > 0)
     {
