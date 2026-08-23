@@ -1,0 +1,183 @@
+
+// Runs this repository's own emitter against every baked artifact, on a real NPU.
+//
+// Nothing here talks to XRT for the run itself. The instruction stream is built by an
+// amd::program, the array is opened by amd::device, and the run goes through amd::operation --
+// the same objects the runtime is made of. Going around them, as an earlier version of this did,
+// hides exactly the kind of gap that matters: device had no constructor at all and nobody
+// noticed, because nothing had ever constructed one.
+//
+// Cases are discovered, not listed. Every xclbin in the directory is opened, its descriptor says
+// which operator it is, and the aiecc streams sitting beside it say which shapes to run: one
+// per stream. So baking a design adds its cases, and nothing has to be kept in step by hand.
+//
+// Everything the backend needs is in headers with no protobuf or onnx behind them, so this builds
+// against XRT and spdlog alone.
+
+#include "cases.hpp"
+
+#include "amd/descriptor.hpp"
+#include "amd/operation.hpp"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+#include <map>
+#include <string>
+#include <string_view>
+
+namespace
+{
+namespace fs = std::filesystem;
+using namespace lnpu::nex::amd;
+
+/**
+ * @brief Reads "...m128k3072n1536.aiecc.bin" back into a shape.
+ *
+ * A shape-agnostic design is one array and a stream per shape, so the shape has to be written
+ * somewhere. It is written in the file name -- bake.py puts it there -- rather than in a sidecar,
+ * because a name cannot go missing and cannot disagree with the file it names.
+ */
+bool
+shape_in(std::string const& name, hw::gemm_case& into)
+{
+    auto const at = name.find(".m");
+    if (at == std::string::npos) return false;
+
+    return std::sscanf(name.c_str() + at, ".m%uk%un%u", &into.m, &into.k, &into.n) == 3;
+}
+
+/// Streams beside an xclbin: "<stem>.aiecc.bin" and "<stem>.<shape>.aiecc.bin".
+std::vector<fs::path>
+references_for(fs::path const& xclbin)
+{
+    auto const           stem = xclbin.stem().string();
+    std::vector<fs::path> found{};
+
+    for (auto const& entry : fs::directory_iterator{xclbin.parent_path()})
+    {
+        auto const name = entry.path().filename().string();
+        if (name.starts_with(stem) and name.ends_with(".aiecc.bin"))
+        {
+            found.push_back(entry.path());
+        }
+    }
+
+    std::sort(found.begin(), found.end());
+    return found;
+}
+
+struct tally
+{
+    std::size_t ran{};
+    std::size_t passed{};
+};
+
+void
+run_one(fs::path const& xclbin, hw::options const& how, tally& count)
+{
+    std::string op{};
+    try
+    {
+        xrt::xclbin binary{xclbin.string()};
+        op = operation::read_descriptor(binary).op();
+    }
+    catch (std::exception const& failure)
+    {
+        std::printf("\n=== %s\n  설계를 읽을 수 없다: %s\n",
+                    xclbin.filename().string().c_str(),
+                    failure.what());
+        ++count.ran;
+        return;
+    }
+
+    auto const references = references_for(xclbin);
+
+    if (op == "rmsnorm")
+    {
+        // One design, one length: the count is baked into the cores, so there is one case here
+        // however many streams happen to sit beside it.
+        std::printf("\n=== %s\n", xclbin.stem().string().c_str());
+        ++count.ran;
+        if (hw::run_rmsnorm(xclbin, references.empty() ? fs::path{} : references.front(), how))
+        {
+            ++count.passed;
+        }
+        return;
+    }
+
+    if (op == "gemm")
+    {
+        std::vector<hw::gemm_case> shapes{};
+        for (auto const& reference : references)
+        {
+            hw::gemm_case shape{};
+            if (not shape_in(reference.filename().string(), shape))
+            {
+                std::printf("  %s 는 shape 를 이름에 담고 있지 않아 건너뛴다\n",
+                            reference.filename().string().c_str());
+                continue;
+            }
+            shape.reference = reference;
+            shapes.push_back(shape);
+        }
+
+        if (shapes.empty())
+        {
+            std::printf("\n=== %s\n  돌릴 shape 가 없다\n", xclbin.stem().string().c_str());
+            return;
+        }
+
+        std::printf("\n=== %s  (shape %zu개)\n", xclbin.stem().string().c_str(), shapes.size());
+        count.ran += shapes.size();
+        count.passed += hw::run_gemm(xclbin, shapes, how);
+        return;
+    }
+
+    std::printf("\n=== %s\n  '%s' 을 돌리는 케이스가 아직 없다\n",
+                xclbin.stem().string().c_str(),
+                op.c_str());
+}
+
+} // namespace
+
+int
+main(int argc, char** argv)
+{
+    hw::options how{};
+    how.dir     = argc > 1 ? argv[1] : "../lnpu-artifacts/amd";
+    how.repeats = argc > 2 ? std::atoi(argv[2]) : 100;
+    how.dry     = argc > 3 and std::string_view{argv[3]} == "--dry";
+
+    if (not fs::is_directory(how.dir))
+    {
+        std::printf("아티팩트 디렉터리가 없다: %s\n", how.dir.string().c_str());
+        return 2;
+    }
+
+    std::printf("아티팩트  %s\n", fs::absolute(how.dir).string().c_str());
+
+    std::vector<fs::path> designs{};
+    for (auto const& entry : fs::directory_iterator{how.dir})
+    {
+        if (entry.path().extension() == ".xclbin") designs.push_back(entry.path());
+    }
+    std::sort(designs.begin(), designs.end());
+
+    tally count{};
+    for (auto const& xclbin : designs)
+    {
+        try
+        {
+            run_one(xclbin, how, count);
+        }
+        catch (std::exception const& failure)
+        {
+            std::printf("  예외: %s\n", failure.what());
+        }
+    }
+
+    std::printf("\n%zu개 중 %zu개 통과\n", count.ran, count.passed);
+    return count.passed == count.ran ? 0 : 1;
+}

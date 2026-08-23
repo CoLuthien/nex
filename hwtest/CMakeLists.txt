@@ -1,7 +1,10 @@
 # Standalone: builds only the instruction emitter plus this test, so it can be carried to a
 # machine with an NPU without bringing protobuf, onnx or the rest of the tree along.
+#
+# One case file per operator. Adding an operator is adding a file here and a branch in main.cpp;
+# nothing else in the test knows how many there are.
 cmake_minimum_required(VERSION 3.22)
-project(rmsnorm-hwtest LANGUAGES CXX)
+project(nex-hwtest LANGUAGES CXX)
 
 include(../cmake/sdk/FindXRT.cmake)
 include(../cmake/sdk/FindAIEBU.cmake)
@@ -23,8 +26,11 @@ message(STATUS "XRT: ${XRT_DIR}")
 
 set(NEX_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../lnpu-nex/src")
 
-add_executable(rmsnorm-hwtest
-    rmsnorm-hwtest.cpp
+add_executable(nex-hwtest
+    main.cpp
+    support.cpp
+    case-rmsnorm.cpp
+    case-gemm.cpp
 
     ${NEX_SRC}/amd/command.cpp
     ${NEX_SRC}/amd/descriptor.cpp
@@ -32,7 +38,9 @@ add_executable(rmsnorm-hwtest
     ${NEX_SRC}/amd/commands/ddr-patch.cpp
     ${NEX_SRC}/amd/commands/issue-token.cpp
     ${NEX_SRC}/amd/commands/queue-push.cpp
+    ${NEX_SRC}/amd/commands/register-write.cpp
     ${NEX_SRC}/amd/commands/tct-wait.cpp
+    ${NEX_SRC}/amd/programs/gemm.cpp
     ${NEX_SRC}/amd/programs/rmsnorm.cpp
 
     ${NEX_SRC}/amd/device.cpp
@@ -40,15 +48,15 @@ add_executable(rmsnorm-hwtest
     ${NEX_SRC}/amd/operation-registry.cpp
 )
 
-target_include_directories(rmsnorm-hwtest PRIVATE
+target_include_directories(nex-hwtest PRIVATE
     ${NEX_SRC}
     "${CMAKE_CURRENT_SOURCE_DIR}/../lnpu-cmn/include"  # operation-registry 가 cmn/containers 를 쓴다
     "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty"        # 그리고 spdlog
     "${XRT_DIR}/include")
 
 
-target_link_libraries(rmsnorm-hwtest PRIVATE xrt::xrt aiebu::aiebu)
+target_link_libraries(nex-hwtest PRIVATE xrt::xrt aiebu::aiebu)
 
 if(MSVC)
-    target_compile_options(rmsnorm-hwtest PRIVATE /Zc:preprocessor /utf-8 /EHsc /MT)
+    target_compile_options(nex-hwtest PRIVATE /Zc:preprocessor /utf-8 /EHsc /MT)
 endif()

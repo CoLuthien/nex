@@ -80,8 +80,7 @@ gemm::describe(descriptor const& metadata)
     };
 }
 
-gemm::gemm(design fixed, parameters param)
-    : m_design(std::move(fixed)), m_param(std::move(param))
+gemm::gemm(design fixed, parameters param) : m_design(std::move(fixed)), m_param(std::move(param))
 {
 }
 
@@ -118,7 +117,9 @@ gemm::wire(command_list& sequence) const
 
     if (columns == 0 or rows == 0 or bytes == 0) return failure(std::errc::invalid_argument);
     if (m_design.tile_m == 0 or m_design.tile_k == 0 or m_design.tile_n == 0)
+    {
         return failure(std::errc::invalid_argument);
+    }
 
     auto const block = m_design.tile_m * rows;    // rows of C the array holds at once
     auto const wide  = m_design.tile_n * columns; // columns of C the array holds at once
