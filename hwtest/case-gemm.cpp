@@ -152,6 +152,7 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
             .a = {.argument_index = design.argument("a")},
             .b = {.argument_index = design.argument("b")},
             .c = {.argument_index = design.argument("c")},
+            .wait_for_inputs = how.drain,
         };
 
         programs::gemm const emitter{fixed, param};
@@ -169,8 +170,14 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
 
         describe_header(stream->as_instructions());
 
-        if (not shape.reference.empty() and
-            not matches_reference(stream->as_instructions(), shape.reference))
+        if (how.drain)
+        {
+            // A superset of what aiecc emits, so there is nothing to compare against. The numbers
+            // are the check here.
+            std::printf("     드레인 켬 -- aiecc 스트림과는 다르다 (의도된 것)\n");
+        }
+        else if (not shape.reference.empty() and
+                 not matches_reference(stream->as_instructions(), shape.reference))
         {
             continue;
         }

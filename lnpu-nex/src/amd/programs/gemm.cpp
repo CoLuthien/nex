@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace lnpu::nex::amd::programs
 {
@@ -224,6 +225,25 @@ gemm::wire(command_list& sequence) const
     auto const a_bands   = rows / a_streams;
     auto const a_height  = a_bands * m_design.tile_m;
 
+    // Where every input stream was put, so that each can be waited on once the results are in.
+    // Left empty when nothing is waiting on them; see parameters::wait_for_inputs.
+    std::vector<npu::placement> reading{};
+
+    // Queues an input stream. A transfer only produces a token if its queue register was told to
+    // before the descriptor was pushed, so the two go together or neither does.
+    auto const announce = [&](npu::placement const& where) {
+        if (m_param.wait_for_inputs)
+        {
+            sequence.record(where,
+                            make<commands::issue_token>(commands::issue_token::parameters{}));
+            reading.push_back(where);
+        }
+
+        sequence.record(where,
+                        make<commands::queue_push>(commands::queue_push::parameters{
+                            .repeat_count = n_steps - 1, .issue_token = m_param.wait_for_inputs}));
+    };
+
     // The array is walked once per column of it, but a step is not a column: C and B belong to
     // the column of that index while A, being fewer, belongs to a column further along. The
     // compiler describes them in that interleaved order, and since descriptor numbers are handed
@@ -274,9 +294,7 @@ gemm::wire(command_list& sequence) const
                      static_cast<command::word>(static_cast<std::uint64_t>(band) * a_height *
                                                 m_param.k * bytes));
 
-            sequence.record(where,
-                            make<commands::queue_push>(
-                                commands::queue_push::parameters{.repeat_count = n_steps - 1}));
+            announce(where);
         }
 
         // B: this column's slice of the right operand, advancing one slice per tile along N.
@@ -296,15 +314,25 @@ gemm::wire(command_list& sequence) const
                      static_cast<command::word>(static_cast<std::uint64_t>(column) * m_param.k *
                                                 m_design.tile_n * bytes));
 
-            sequence.record(where,
-                            make<commands::queue_push>(
-                                commands::queue_push::parameters{.repeat_count = n_steps - 1}));
+            announce(where);
         }
     }
 
     for (std::uint32_t column = 0; column < columns; ++column)
     {
         sequence.record(at(column, 0, npu::S2MM, npu::bd_0), make<commands::tct_wait>());
+    }
+
+    // The results are in; now make sure nothing is still moving. The descriptor a wait names does
+    // not matter -- a token says a channel finished, not which descriptor did -- so bd_0 stands
+    // for all of them, exactly as the result waits above use it.
+    for (auto const& where : reading)
+    {
+        sequence.record(npu::placement{.location  = where.location,
+                                       .bd        = npu::bd_0,
+                                       .channel   = where.channel,
+                                       .direction = where.direction},
+                        make<commands::tct_wait>());
     }
 
     return {};

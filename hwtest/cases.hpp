@@ -7,6 +7,7 @@
 #include "support.hpp"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace hw

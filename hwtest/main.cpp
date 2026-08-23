@@ -98,27 +98,65 @@ run_one(fs::path const& xclbin, hw::options const& how, tally& count)
     {
         // One design, one length: the count is baked into the cores, so there is one case here
         // however many streams happen to sit beside it.
-        if (not how.only.empty() and xclbin.stem().string().find(how.only) == std::string::npos)
-        {
-            return;
-        }
+        auto const stem = xclbin.stem().string();
 
-        std::printf("\n=== %s\n", xclbin.stem().string().c_str());
-        ++count.ran;
-        if (hw::run_rmsnorm(xclbin, references.empty() ? fs::path{} : references.front(), how))
+        // An explicit order names what to run, so a design it does not name is not run at all.
+        auto const asked = how.order.empty()
+                               ? (how.only.empty() or stem.find(how.only) != std::string::npos
+                                      ? std::size_t{1}
+                                      : std::size_t{0})
+                               : static_cast<std::size_t>(std::count_if(
+                                     how.order.begin(), how.order.end(), [&](auto const& one) {
+                                         return stem.find(one) != std::string::npos;
+                                     }));
+
+        for (std::size_t again = 0; again < asked; ++again)
         {
-            ++count.passed;
+            std::printf("\n=== %s\n", stem.c_str());
+            ++count.ran;
+            if (hw::run_rmsnorm(xclbin, references.empty() ? fs::path{} : references.front(), how))
+            {
+                ++count.passed;
+            }
         }
         return;
     }
 
     if (op == "gemm")
     {
+        // Without an order, every stream beside the xclbin, once each, in name order. With one,
+        // exactly what it names, in that order -- a name may appear twice, which is how a shape
+        // is run again after another one has been through the same context.
+        std::vector<fs::path> wanted{};
+
+        if (how.order.empty())
+        {
+            for (auto const& reference : references)
+            {
+                if (how.only.empty() or
+                    reference.filename().string().find(how.only) != std::string::npos)
+                {
+                    wanted.push_back(reference);
+                }
+            }
+        }
+        else
+        {
+            for (auto const& one : how.order)
+            {
+                auto const found =
+                    std::find_if(references.begin(), references.end(), [&](auto const& reference) {
+                        return reference.filename().string().find(one) != std::string::npos;
+                    });
+
+                if (found != references.end()) wanted.push_back(*found);
+            }
+        }
+
         std::vector<hw::gemm_case> shapes{};
-        for (auto const& reference : references)
+        for (auto const& reference : wanted)
         {
             auto const named = reference.filename().string();
-            if (not how.only.empty() and named.find(how.only) == std::string::npos) continue;
 
             hw::gemm_case shape{};
             if (not shape_in(named, shape))
@@ -132,7 +170,7 @@ run_one(fs::path const& xclbin, hw::options const& how, tally& count)
 
         if (shapes.empty())
         {
-            if (how.only.empty())
+            if (how.only.empty() and how.order.empty())
             {
                 std::printf("\n=== %s\n  돌릴 shape 가 없다\n", xclbin.stem().string().c_str());
             }
@@ -172,6 +210,28 @@ main(int argc, char** argv)
         else if (arg == "--isolate")
         {
             how.isolate = true;
+        }
+        else if (arg == "--drain")
+        {
+            how.drain = true;
+        }
+        else if (arg == "--order")
+        {
+            if (at + 1 >= argc)
+            {
+                std::printf("--order 뒤에 쉼표로 구분한 목록이 필요하다\n");
+                return 2;
+            }
+
+            std::string_view listed{argv[++at]};
+            while (not listed.empty())
+            {
+                auto const comma = listed.find(',');
+                auto const one   = listed.substr(0, comma);
+                if (not one.empty()) how.order.emplace_back(one);
+                if (comma == std::string_view::npos) break;
+                listed.remove_prefix(comma + 1);
+            }
         }
         else if (arg == "--only")
         {
@@ -219,6 +279,13 @@ main(int argc, char** argv)
     std::printf("아티팩트  %s\n", fs::absolute(how.dir).string().c_str());
     if (not how.only.empty()) std::printf("케이스    '%s' 를 담은 것만\n", how.only.c_str());
     if (how.isolate) std::printf("격리      shape 마다 hw_context 를 새로 연다 (진단용)\n");
+    if (how.drain) std::printf("드레인    입력 전송까지 기다린다 (aiecc 스트림과 달라진다)\n");
+    if (not how.order.empty())
+    {
+        std::printf("순서      ");
+        for (auto const& one : how.order) std::printf("%s ", one.c_str());
+        std::printf("\n");
+    }
 
     std::vector<fs::path> designs{};
     for (auto const& entry : fs::directory_iterator{how.dir})

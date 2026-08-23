@@ -45,6 +45,17 @@ struct options
      * way a shape runs, that is a cost to plan around, not an arrangement to adopt.
      */
     bool isolate{false};
+
+    /**
+     * @brief Have a gemm wait for its inputs as well as its result.
+     *
+     * See gemm::parameters::wait_for_inputs. The stream stops matching aiecc when this is on --
+     * it is deliberately a superset -- so the reference comparison is skipped and said to be.
+     */
+    bool drain{false};
+
+    /// Cases to run, in this order, repeats included. Empty runs each once in name order.
+    std::vector<std::string> order;
 };
 
 void say(char const* what);

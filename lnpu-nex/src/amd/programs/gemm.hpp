@@ -80,6 +80,26 @@ public:
         binding a;
         binding b;
         binding c;
+
+        /**
+         * @brief Wait for every transfer the run started, not only for the result.
+         *
+         * Off, the run is finished when C has been written, which is what aiecc emits and what
+         * IRON needs: its flow bakes one xclbin per shape and runs it, so no second shape ever
+         * follows on the same array and nothing has to be left tidy.
+         *
+         * We do follow one shape with another, and that is where it shows. Running four shapes
+         * against one hardware context, the two whose K differed from the previous run returned
+         * wrong numbers and then timed out on every repeat, while the one that only changed N was
+         * fine -- and each of the four was correct when given a context of its own. What the A
+         * and B streams carry scales with K, and they are the transfers nothing here waits for.
+         *
+         * On, every stream this run queued announces itself and is waited on: twelve more waits
+         * on the input side. The stream is then no longer the one aiecc produces, which is the
+         * point rather than a problem -- but it is also why the reference streams shipped beside
+         * the artifacts only match with this off.
+         */
+        bool wait_for_inputs{false};
     };
 
     gemm(design fixed, parameters param);
