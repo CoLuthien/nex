@@ -30,9 +30,14 @@ using namespace lnpu::nex::amd;
  * absolute errors clustered at 0.06 to 0.16 whatever the output was, which per element reads as
  * anything from 0.4% to 5000x and as a norm reads as under a percent.
  *
+ * The bound is 2%, twice what the largest correct shape measured. What is left grows with K --
+ * 0.00887 at 1536, 0.00950 at 2048, 0.01057 at 3072, which is K to the quarter -- so a bound at
+ * the measurement would have failed the next shape up for being slightly less precise rather
+ * than wrong.
+ *
  * A wrong layout does not slip through a norm. It misses by an order one, not by a last place.
  */
-constexpr double kRelativeL2 = 0.01;
+constexpr double kRelativeL2 = 0.02;
 
 /// Per-element bounds, reported but not judged on. See kRelativeL2.
 constexpr float kRelativeTolerance = 0.02F;
