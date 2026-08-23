@@ -322,24 +322,33 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
             return off;
         };
 
-        // Twice, because the stock IRON core reads its trip counts once per barrier and the two
-        // runs disagree when the previous shape left different ones behind. Which run is right
-        // is the whole question, so both are measured rather than one being taken on faith.
+        // More than once, because a run can be wrong in a way that depends on what ran before
+        // it. Measured on hardware: after a shape with a different K, the first run computes as
+        // though the previous K were still in force and the second does not recover. One
+        // measurement cannot tell that from a design that simply cannot run the shape.
         say("execute");
-        auto const first  = run_once("1회차");
-        auto const second = run_once("2회차");
 
-        bool const ok = second.relative_l2 <= kRelativeL2;
-        std::printf("     %s (2회차 상대 L2 %.4g, 허용 %.4g)\n",
+        std::vector<deviation> runs{};
+        for (int again = 0; again < how.verify; ++again)
+        {
+            runs.push_back(run_once((std::to_string(again + 1) + "회차").c_str()));
+        }
+
+        std::printf("     회차별 상대 L2 ");
+        for (auto const& one : runs) std::printf(" %.4g", one.relative_l2);
+        std::printf("\n");
+
+        // Judged on the last one: whether the shape settles is what decides if it is usable, and
+        // the run that led into it is reported above either way.
+        bool const ok = runs.back().relative_l2 <= kRelativeL2;
+        std::printf("     %s (마지막 회차 상대 L2 %.4g, 허용 %.4g)\n",
                     ok ? "통과" : "실패",
-                    second.relative_l2,
+                    runs.back().relative_l2,
                     kRelativeL2);
 
-        if (first.relative_l2 > kRelativeL2 and ok)
+        if (ok and runs.front().relative_l2 > kRelativeL2)
         {
-            std::printf("     *** 1회차만 틀렸다 (L2 %.4g -> %.4g). 코어가 한 실행 뒤처진다\n",
-                        first.relative_l2,
-                        second.relative_l2);
+            std::printf("     *** 처음에는 틀렸다가 자리를 잡았다\n");
         }
 
         if (ok) ++passed;

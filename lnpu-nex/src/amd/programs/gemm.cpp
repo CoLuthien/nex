@@ -116,7 +116,10 @@ gemm::wire(command_list& sequence) const
     auto const rows    = m_design.rows;
     auto const bytes   = m_design.element_bytes;
 
-    if (columns == 0 or rows == 0 or bytes == 0) return failure(std::errc::invalid_argument);
+    if (columns == 0 or rows == 0 or bytes == 0)
+    {
+        return failure(std::errc::invalid_argument);
+    }
     if (m_design.tile_m == 0 or m_design.tile_k == 0 or m_design.tile_n == 0)
     {
         return failure(std::errc::invalid_argument);

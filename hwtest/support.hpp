@@ -56,6 +56,10 @@ struct options
 
     /// Cases to run, in this order, repeats included. Empty runs each once in name order.
     std::vector<std::string> order;
+
+    /// Times to run and measure each gemm shape. More than one because a run can be wrong in a
+    /// way that depends on what ran before it, and one measurement cannot show that.
+    int verify{2};
 };
 
 void say(char const* what);

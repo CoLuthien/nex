@@ -215,6 +215,15 @@ main(int argc, char** argv)
         {
             how.drain = true;
         }
+        else if (arg == "--verify")
+        {
+            if (at + 1 >= argc)
+            {
+                std::printf("--verify 뒤에 횟수가 필요하다\n");
+                return 2;
+            }
+            how.verify = std::max(1, std::atoi(argv[++at]));
+        }
         else if (arg == "--order")
         {
             if (at + 1 >= argc)
@@ -280,6 +289,7 @@ main(int argc, char** argv)
     if (not how.only.empty()) std::printf("케이스    '%s' 를 담은 것만\n", how.only.c_str());
     if (how.isolate) std::printf("격리      shape 마다 hw_context 를 새로 연다 (진단용)\n");
     if (how.drain) std::printf("드레인    입력 전송까지 기다린다 (aiecc 스트림과 달라진다)\n");
+    if (how.verify != 2) std::printf("검증      shape 마다 %d 회 실행하고 전부 잰다\n", how.verify);
     if (not how.order.empty())
     {
         std::printf("순서      ");
