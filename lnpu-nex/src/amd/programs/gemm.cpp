@@ -130,9 +130,15 @@ gemm::wire(command_list& sequence) const
 
     // A shape that does not divide leaves some core computing a tile that is partly outside the
     // matrix, which the descriptors would happily fetch.
-    if (m_param.m == 0 or m_param.m % block != 0) return failure(std::errc::invalid_argument);
-    if (m_param.k == 0 or m_param.k % m_design.tile_k != 0)
+    if (m_param.m == 0 or m_param.m % block != 0)
+    {
         return failure(std::errc::invalid_argument);
+    }
+    if (m_param.k == 0 or m_param.k % m_design.tile_k != 0)
+    {
+        return failure(std::errc::invalid_argument);
+    }
+
     if (m_param.n == 0 or m_param.n % wide != 0) return failure(std::errc::invalid_argument);
 
     if (columns > common.partition_columns) return failure(std::errc::result_out_of_range);

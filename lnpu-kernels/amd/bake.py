@@ -143,10 +143,14 @@ def main() -> int:
     parsed.add_argument("--all", action="store_true")
     parsed.add_argument("--dry", action="store_true", help="커맨드만 출력")
     parsed.add_argument("--build-dir", default=str(HERE / "build"))
+    parsed.add_argument("--fresh", action="store_true",
+                        help="build 디렉터리를 지우고 시작한다. IRON 은 파일명으로 캐시하므로, "
+                             "설계를 바꿨는데 다시 지어지지 않으면 이것부터 의심할 것")
     args = parsed.parse_args()
 
     # There is no NPU here to ask, so the target is stated.
     set_current_device(NPU2())
+
 
     from catalog import catalog
 
@@ -165,6 +169,9 @@ def main() -> int:
         return 2
 
     build_dir = Path(args.build_dir)
+    if args.fresh and build_dir.exists():
+        shutil.rmtree(build_dir)
+        print(f"지움  {build_dir}")
     build_dir.mkdir(parents=True, exist_ok=True)
 
     baked = sum(bake(one, build_dir, args.dry) for one in entries)

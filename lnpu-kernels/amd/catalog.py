@@ -87,7 +87,10 @@ def _rmsnorm(columns: int, channels: int, size: int, weighted: bool) -> Entry:
 
 
 def _gemm(columns: int, tile_m: int, tile_k: int, tile_n: int, shape: tuple[int, int, int]) -> Entry:
-    from iron.operators.gemm.op import GEMM
+    # Ours, not IRON's: the stock design's worker barrier does not hold a worker between runs,
+    # which makes a second shape on the same array compute with the first one's trip counts.
+    # See designs/gemm-design.py.
+    from designs.gemm import GEMM
 
     m, k, n = shape
 
