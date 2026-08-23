@@ -40,6 +40,11 @@ class Entry:
     #: Columns the design spreads work over. Not the partition width -- see docs/08 8.4.
     columns: int = 8
 
+    #: Names the shape the reference stream was produced for. Empty for a design that runs one
+    #: shape anyway; a shape-agnostic design has one array and a stream per shape, and the
+    #: emitter has to reproduce each of them.
+    reference_suffix: str = ""
+
 
 def _rmsnorm(columns: int, channels: int, size: int, weighted: bool) -> Entry:
     """One design per shape. The tile is compiled into the cores; see the module docstring."""
@@ -90,6 +95,7 @@ def _gemm(columns: int, tile_m: int, tile_k: int, tile_n: int, shape: tuple[int,
         name=f"gemm_bf16_c{columns}_t{tile_m}x{tile_k}x{tile_n}",
         op="gemm",
         columns=columns,
+        reference_suffix=f".m{m}k{k}n{n}",
         build=lambda ctx: GEMM(
             # A placeholder. IRON's constructor demands a shape, but the array it produces does
             # not depend on one: four different (K, N) bake to the same PDI byte for byte. What

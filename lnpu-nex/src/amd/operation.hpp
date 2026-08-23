@@ -2,6 +2,7 @@
 #pragma once
 
 #include "command.hpp"
+#include "descriptor.hpp"
 
 #include <xrt/xrt_device.h>
 #include <xrt/xrt_hw_context.h>
@@ -20,11 +21,20 @@
 namespace lnpu::nex::amd
 {
 
+/**
+ * @brief One xclbin, opened on the array and ready to run instruction streams against.
+ *
+ * The design descriptor the baking script put in the xclbin is read here, once, and handed to
+ * whoever builds a program for it. That is the whole reason this owns it: the array arrangement
+ * a program has to agree with is a fact about this xclbin, and reading it off the artifact is
+ * what keeps the two from disagreeing without anyone noticing.
+ */
 class operation final
 {
     std::shared_ptr<xrt::hw_context> m_operation_context;
     std::shared_ptr<xrt::device>     m_device;
     std::string                      m_kernel_name;
+    descriptor                       m_descriptor;
 
 public:
     using unique = std::unique_ptr<operation>;
@@ -32,17 +42,33 @@ public:
     {
         std::shared_ptr<xrt::device> device;
         xrt::xclbin                  xclbin;
-        // TODO
-        // need additional information for number of occupying columns;
     };
 
-    // need additional information for number of occupying columns;
+    /**
+     * @throws std::runtime_error when the xclbin declares no mlir-aie kernel, or carries no
+     *         design descriptor. A design nothing can describe is a design nothing can wire,
+     *         so it is refused here rather than at the first wrong number.
+     */
     explicit operation(parameters&& param);
 
     operation(operation const&)            = delete;
     operation(operation&&)                 = delete;
     operation& operator=(operation const&) = delete;
     operation& operator=(operation&&)      = delete;
+
+    /**
+     * @brief Pulls USER_METADATA out of an xclbin and parses it.
+     *
+     * Public and static because the descriptor is wanted before there is an operation to ask:
+     * a program can be built and its stream checked against a reference without opening the
+     * array at all, and there is no reason for that path to grow its own copy of this.
+     *
+     * @throws std::runtime_error when the section is absent or does not parse.
+     */
+    static descriptor read_descriptor(xrt::xclbin const& binary);
+
+    /// What the xclbin says about itself. A program's describe() reads its fields out of this.
+    descriptor const& metadata() const { return m_descriptor; }
 
     class instance;
     std::unique_ptr<instance> create_instance(command_list::unique commands);

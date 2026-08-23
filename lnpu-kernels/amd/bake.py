@@ -123,11 +123,14 @@ def bake(entry, build_dir: Path, dry: bool) -> bool:
     embed(xclbin, descriptor, into)
 
     # The reference stream ships beside it: the emitter is checked against it before anything is
-    # sent to hardware, and a mismatch means there is nothing for the hardware to say.
-    shutil.copy(stream, OUT / f"{entry.name}.aiecc.bin")
+    # sent to hardware, and a mismatch means there is nothing for the hardware to say. It is named
+    # after the shape as well as the design, because a shape-agnostic design has one array and
+    # many streams -- and each of those streams is a case the emitter has to reproduce.
+    shutil.copy(stream, OUT / f"{entry.name}{entry.reference_suffix}.aiecc.bin")
 
+    reference = OUT / f"{entry.name}{entry.reference_suffix}.aiecc.bin"
     print(f"    {into.name}  {into.stat().st_size} B  "
-          f"(+{OUT.joinpath(entry.name + '.aiecc.bin').stat().st_size} B stream)")
+          f"(+{reference.name} {reference.stat().st_size} B)")
     return True
 
 

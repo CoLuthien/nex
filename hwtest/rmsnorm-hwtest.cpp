@@ -11,6 +11,7 @@
 
 #include "amd/descriptor.hpp"
 #include "amd/device.hpp"
+#include "amd/operation.hpp"
 #include "amd/programs/rmsnorm.hpp"
 
 #include <xrt/xrt_bo.h>
@@ -70,24 +71,6 @@ read_file(fs::path const& path)
 }
 
 // ---------------------------------------------------------------------------------------------
-// The design descriptor the baking script wrote into the xclbin, so nothing here restates it.
-
-std::string_view
-user_metadata(xrt::xclbin const& binary)
-{
-    auto const* top = binary.get_axlf();
-    if (top == nullptr) return {};
-
-    for (std::uint32_t at = 0; at < top->m_header.m_numSections; ++at)
-    {
-        auto const& header = top->m_sections[at];
-        if (header.m_sectionKind != static_cast<std::uint32_t>(USER_METADATA)) continue;
-
-        return {reinterpret_cast<char const*>(top) + header.m_sectionOffset,
-                static_cast<std::size_t>(header.m_sectionSize)};
-    }
-    return {};
-}
 
 void
 describe_signature(xrt::xclbin const& binary)
@@ -191,42 +174,37 @@ run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
                 xclbin_path.filename().string().c_str(),
                 static_cast<std::uintmax_t>(fs::file_size(xclbin_path)));
 
-    auto const metadata = user_metadata(binary);
-    if (metadata.empty()) throw std::runtime_error("xclbin carries no USER_METADATA");
-
-    auto const design = descriptor::parse(metadata);
+    // The same call the operation makes when it opens this xclbin, so the design this test
+    // wires against and the one the runtime would read cannot be two different things.
+    auto const design = operation::read_descriptor(binary);
     if (design.op() != "rmsnorm")
         throw std::runtime_error("this test runs rmsnorm, not '" + std::string{design.op()} + "'");
 
-    auto const common   = design.common();
-    auto const channels = design.u32("channels");
-    auto const bytes    = design.u32("element_bytes");
-    auto const weighted = design.flag("weighted");
+    // Read by the program itself, so this test cannot describe the design one way while the
+    // runtime describes it another.
+    auto const fixed    = programs::rmsnorm::describe(design);
+    auto const weighted = fixed.weighted;
 
     auto const input  = read_file(dir / (name + ".input.bin"));
     auto const golden = read_file(dir / (name + ".golden.bin"));
     auto const weight = weighted ? read_file(dir / (name + ".weight.bin")) : std::vector<char>{};
 
-    auto const elements = static_cast<std::uint32_t>(input.size() / bytes);
+    auto const elements = static_cast<std::uint32_t>(input.size() / fixed.element_bytes);
 
     say("설계 (xclbin USER_METADATA)");
     std::printf("     columns=%u channels=%u tile=%u elements=%u weighted=%s element_bytes=%u\n",
-                common.columns,
-                channels,
-                design.u32("tile"),
-                design.u32("elements"),
+                fixed.common.columns,
+                fixed.channels,
+                fixed.tile,
+                fixed.elements,
                 weighted ? "yes" : "no",
-                bytes);
+                fixed.element_bytes);
 
-    // The design fixes the size: its cores loop a count that is a compile-time constant in the
-    // IRON design, not a runtime parameter, so a design runs exactly one length. Feeding it a
-    // longer input does not run longer -- it runs the first slice and leaves the rest untouched,
-    // which looks like a partly-correct answer rather than a failure.
-    if (elements != design.u32("elements"))
+    // wire() refuses this too, but a size mismatch means the wrong artifact was picked up and
+    // that is worth saying in those words rather than as a generic invalid_argument.
+    if (elements != fixed.elements)
     {
-        std::printf("     입력이 %u 원소인데 설계는 %u 원소용이다\n",
-                    elements,
-                    design.u32("elements"));
+        std::printf("     입력이 %u 원소인데 설계는 %u 원소용이다\n", elements, fixed.elements);
         return false;
     }
 
@@ -243,28 +221,24 @@ run_case(fs::path const& dir, std::string const& name, int repeats, bool dry)
     // ---- the instruction stream, built here by the program the runtime uses
     say("명령 스트림 합성 (amd::programs::rmsnorm)");
 
+    // Bindings taken from the descriptor rather than counted by hand. The two rmsnorm designs
+    // disagree about where output sits -- index 2 when there is a weight stream and 1 when there
+    // is not -- and an index off by one reads a different buffer without complaint.
     programs::rmsnorm::parameters param{};
-    param.design        = common;
-    param.channels      = channels;
-    param.elements      = elements;
-    param.element_bytes = bytes;
-    param.weighted      = weighted;
-
-    // Taken from the descriptor rather than counted by hand. The two rmsnorm designs disagree
-    // about where output sits -- index 2 when there is a weight stream and 1 when there is not --
-    // and an index off by one reads a different buffer without complaint.
-    param.input  = {.argument_index = design.argument("input")};
-    param.output = {.argument_index = design.argument("output")};
+    param.elements = elements;
+    param.input    = {.argument_index = design.argument("input")};
+    param.output   = {.argument_index = design.argument("output")};
     if (weighted) param.weight = {.argument_index = design.argument("weight")};
 
-    programs::rmsnorm const emitter{param};
+    programs::rmsnorm const emitter{fixed, param};
 
     std::printf("     코어 %u개, 코어당 %u 원소, 컬럼당 BD %u개\n",
                 emitter.cores(),
                 emitter.slice(),
                 emitter.buffer_descriptors_used());
 
-    auto sequence = std::make_unique<command_list>(common.generation, common.partition_columns);
+    auto sequence =
+        std::make_unique<command_list>(fixed.common.generation, fixed.common.partition_columns);
     if (auto const refused = emitter.wire(*sequence))
     {
         std::printf("     wire 거부: %s\n", refused.message().c_str());

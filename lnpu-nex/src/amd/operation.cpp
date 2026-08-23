@@ -3,6 +3,8 @@
 
 #include <aiebu/aiebu.h>
 
+#include <xrt/experimental/xrt_xclbin.h>
+
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
@@ -20,6 +22,31 @@ namespace
 // this. The full name carries an instance suffix (e.g. "MLIR_AIE:MLIRAIE"), so
 // the prefix is matched instead of the whole string.
 constexpr std::string_view k_kernel_prefix{"MLIR_AIE"};
+
+/**
+ * @brief The raw USER_METADATA section, or nothing when the xclbin has none.
+ *
+ * xrt::xclbin exposes sections it knows about and USER_METADATA is not one of them, so the axlf
+ * header is walked directly. The payload is not owned: it points into the xclbin's own buffer,
+ * which outlives the parse that immediately follows.
+ */
+std::string_view
+user_metadata(xrt::xclbin const& binary)
+{
+    auto const* top = binary.get_axlf();
+    if (top == nullptr) return {};
+
+    for (std::uint32_t at = 0; at < top->m_header.m_numSections; ++at)
+    {
+        auto const& header = top->m_sections[at];
+        if (header.m_sectionKind != static_cast<std::uint32_t>(USER_METADATA)) continue;
+
+        return {reinterpret_cast<char const*>(top) + header.m_sectionOffset,
+                static_cast<std::size_t>(header.m_sectionSize)};
+    }
+
+    return {};
+}
 
 void
 generate_elf(std::span<command::word const> instructions, void** elf, std::size_t* elf_size)
@@ -42,8 +69,26 @@ generate_elf(std::span<command::word const> instructions, void** elf, std::size_
 
 } // namespace
 
+descriptor
+operation::read_descriptor(xrt::xclbin const& binary)
+{
+    auto const section = user_metadata(binary);
+    if (section.empty())
+    {
+        throw std::runtime_error(
+            "[nex::amd::operation] the xclbin carries no design descriptor. It was not baked by "
+            "lnpu-kernels, or it was baked before the descriptor was embedded");
+    }
+
+    // xclbinutil pads a RAW section out to an alignment, and the padding is not json.
+    auto const text = section.substr(0, section.find('\0'));
+
+    return descriptor::parse(text);
+}
+
 operation::operation(parameters&& param) //
-    : m_device(std::move(param.device))
+    : m_device(std::move(param.device)), //
+      m_descriptor(read_descriptor(param.xclbin))
 {
     if (nullptr == m_device)
     {

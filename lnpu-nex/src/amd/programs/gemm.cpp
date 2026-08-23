@@ -1,5 +1,7 @@
 #include "gemm.hpp"
 
+#include "amd/descriptor.hpp"
+
 #include "amd/commands/block-write.hpp"
 #include "amd/commands/ddr-patch.hpp"
 #include "amd/commands/issue-token.hpp"
@@ -8,6 +10,8 @@
 #include "amd/commands/tct-wait.hpp"
 
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace lnpu::nex::amd::programs
@@ -56,21 +60,42 @@ at(std::uint32_t column, std::uint32_t channel, npu::dma_direction direction, np
 
 } // namespace
 
-gemm::gemm(parameters param) : m_param(std::move(param))
+gemm::design
+gemm::describe(descriptor const& metadata)
+{
+    if (metadata.op() != kOp)
+    {
+        throw std::runtime_error("[amd::gemm] this design is '" + std::string{metadata.op()} +
+                                 "', not '" + std::string{kOp} + "'");
+    }
+
+    return design{
+        .common         = metadata.common(),
+        .rows           = metadata.u32("rows"),
+        .first_core_row = metadata.u32("first_core_row"),
+        .tile_m         = metadata.u32("tile", "m"),
+        .tile_k         = metadata.u32("tile", "k"),
+        .tile_n         = metadata.u32("tile", "n"),
+        .element_bytes  = metadata.u32("element_bytes"),
+    };
+}
+
+gemm::gemm(design fixed, parameters param)
+    : m_design(std::move(fixed)), m_param(std::move(param))
 {
 }
 
 std::uint32_t
 gemm::k_steps() const
 {
-    return m_param.tile_k == 0 ? 0 : m_param.k / m_param.tile_k;
+    return m_design.tile_k == 0 ? 0 : m_param.k / m_design.tile_k;
 }
 
 std::uint32_t
 gemm::tile_steps() const
 {
-    auto const block = m_param.tile_m * m_param.rows;
-    auto const wide  = m_param.tile_n * m_param.design.columns;
+    auto const block = m_design.tile_m * m_design.rows;
+    auto const wide  = m_design.tile_n * m_design.common.columns;
     if (block == 0 or wide == 0) return 0;
     return (m_param.m / block) * (m_param.n / wide);
 }
@@ -85,28 +110,28 @@ gemm::buffer_descriptors_used() const
 std::error_code
 gemm::wire(command_list& sequence) const
 {
-    auto const& design = m_param.design;
+    auto const& common = m_design.common;
 
-    auto const columns = design.columns;
-    auto const rows    = m_param.rows;
-    auto const bytes   = m_param.element_bytes;
+    auto const columns = common.columns;
+    auto const rows    = m_design.rows;
+    auto const bytes   = m_design.element_bytes;
 
     if (columns == 0 or rows == 0 or bytes == 0) return failure(std::errc::invalid_argument);
-    if (m_param.tile_m == 0 or m_param.tile_k == 0 or m_param.tile_n == 0)
+    if (m_design.tile_m == 0 or m_design.tile_k == 0 or m_design.tile_n == 0)
         return failure(std::errc::invalid_argument);
 
-    auto const block = m_param.tile_m * rows;    // rows of C the array holds at once
-    auto const wide  = m_param.tile_n * columns; // columns of C the array holds at once
+    auto const block = m_design.tile_m * rows;    // rows of C the array holds at once
+    auto const wide  = m_design.tile_n * columns; // columns of C the array holds at once
 
     // A shape that does not divide leaves some core computing a tile that is partly outside the
     // matrix, which the descriptors would happily fetch.
     if (m_param.m == 0 or m_param.m % block != 0) return failure(std::errc::invalid_argument);
-    if (m_param.k == 0 or m_param.k % m_param.tile_k != 0)
+    if (m_param.k == 0 or m_param.k % m_design.tile_k != 0)
         return failure(std::errc::invalid_argument);
     if (m_param.n == 0 or m_param.n % wide != 0) return failure(std::errc::invalid_argument);
 
-    if (columns > design.partition_columns) return failure(std::errc::result_out_of_range);
-    if (design.parameter_slots.size() < 2) return failure(std::errc::invalid_argument);
+    if (columns > common.partition_columns) return failure(std::errc::result_out_of_range);
+    if (common.parameter_slots.size() < 2) return failure(std::errc::invalid_argument);
 
     // Descriptor extents count 32-bit words whatever the element type is.
     auto const per_word = sizeof(command::word) / bytes;
@@ -133,7 +158,7 @@ gemm::wire(command_list& sequence) const
     // outright, and there is no honest way to emit for it here either -- the product has to be
     // split along K and accumulated, which is the caller's decision to make.
     auto const b_iteration_stride =
-        static_cast<std::uint64_t>(m_param.k) * m_param.tile_n * columns / per_word;
+        static_cast<std::uint64_t>(m_param.k) * m_design.tile_n * columns / per_word;
     if (b_iteration_stride >= kWidestStride) return failure(std::errc::value_too_large);
 
     // ---- tell every core how many times to go round, then let them go
@@ -142,13 +167,13 @@ gemm::wire(command_list& sequence) const
         for (std::uint32_t column = 0; column < columns; ++column)
         {
             npu::placement const core{
-                .location = {.col = column, .row = m_param.first_core_row + row}};
+                .location = {.col = column, .row = m_design.first_core_row + row}};
 
             for (std::uint32_t slot = 0; slot < 2; ++slot)
             {
                 sequence.record(core,
                                 make<commands::register_write>(commands::register_write::parameters{
-                                    .address = design.parameter_slots[slot],
+                                    .address = common.parameter_slots[slot],
                                     .value   = slot == 0 ? k_steps() : tile_steps()}));
             }
         }
@@ -159,9 +184,9 @@ gemm::wire(command_list& sequence) const
         for (std::uint32_t column = 0; column < columns; ++column)
         {
             sequence.record(
-                npu::placement{.location = {.col = column, .row = m_param.first_core_row + row}},
+                npu::placement{.location = {.col = column, .row = m_design.first_core_row + row}},
                 make<commands::register_write>(commands::register_write::parameters{
-                    .address = design.start_register, .value = 1}));
+                    .address = common.start_register, .value = 1}));
         }
     }
 
@@ -196,7 +221,7 @@ gemm::wire(command_list& sequence) const
     auto const a_streams = rows < columns ? rows : columns;
     auto const a_every   = columns / a_streams;
     auto const a_bands   = rows / a_streams;
-    auto const a_height  = a_bands * m_param.tile_m;
+    auto const a_height  = a_bands * m_design.tile_m;
 
     // The array is walked once per column of it, but a step is not a column: C and B belong to
     // the column of that index while A, being fewer, belongs to a column further along. The
@@ -213,7 +238,7 @@ gemm::wire(command_list& sequence) const
 
             describe(where,
                      {.length = words(static_cast<std::uint64_t>(m_param.m) * m_param.n / columns),
-                      .d0     = {.size = words(m_param.tile_n), .stride = 1},
+                      .d0     = {.size = words(m_design.tile_n), .stride = 1},
                       .d1     = {.size = m_param.m, .stride = words(m_param.n)},
                       .d2     = {.stride = advance(n_steps, words(wide))},
                       .iteration_size = m_steps,
@@ -221,7 +246,7 @@ gemm::wire(command_list& sequence) const
                           advance(m_steps, words(static_cast<std::uint64_t>(block) * m_param.n)),
                       .cache_flag = kNormalCache},
                      m_param.c,
-                     words(m_param.tile_n) * sizeof(command::word) * column);
+                     words(m_design.tile_n) * sizeof(command::word) * column);
 
             sequence.record(where,
                             make<commands::issue_token>(commands::issue_token::parameters{}));
@@ -240,9 +265,9 @@ gemm::wire(command_list& sequence) const
 
             describe(where,
                      {.length     = words(static_cast<std::uint64_t>(a_height) * m_param.k),
-                      .d0         = {.size = words(m_param.tile_k), .stride = 1},
+                      .d0         = {.size = words(m_design.tile_k), .stride = 1},
                       .d1         = {.size = a_height, .stride = words(m_param.k)},
-                      .d2         = {.stride = advance(k_steps(), words(m_param.tile_k))},
+                      .d2         = {.stride = advance(k_steps(), words(m_design.tile_k))},
                       .cache_flag = kNormalCache},
                      m_param.a,
                      static_cast<command::word>(static_cast<std::uint64_t>(band) * a_height *
@@ -259,16 +284,16 @@ gemm::wire(command_list& sequence) const
             auto const where = at(column, next_read_channel[column]++, npu::MM2S, bd);
 
             describe(where,
-                     {.length = words(static_cast<std::uint64_t>(m_param.k) * m_param.tile_n),
-                      .d0     = {.size = words(m_param.tile_k), .stride = 1},
-                      .d1     = {.size = m_param.tile_n, .stride = words(m_param.k)},
-                      .d2     = {.stride = advance(k_steps(), words(m_param.tile_k))},
+                     {.length = words(static_cast<std::uint64_t>(m_param.k) * m_design.tile_n),
+                      .d0     = {.size = words(m_design.tile_k), .stride = 1},
+                      .d1     = {.size = m_design.tile_n, .stride = words(m_param.k)},
+                      .d2     = {.stride = advance(k_steps(), words(m_design.tile_k))},
                       .iteration_size   = n_steps,
                       .iteration_stride = advance(n_steps, b_iteration_stride),
                       .cache_flag       = kNormalCache},
                      m_param.b,
                      static_cast<command::word>(static_cast<std::uint64_t>(column) * m_param.k *
-                                                m_param.tile_n * bytes));
+                                                m_design.tile_n * bytes));
 
             sequence.record(where,
                             make<commands::queue_push>(
