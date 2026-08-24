@@ -1,6 +1,8 @@
 
 #include "operation.hpp"
 
+#include "program-registry.hpp"
+
 #include <aiebu/aiebu.h>
 
 #include <xrt/experimental/xrt_xclbin.h>
@@ -117,6 +119,54 @@ operation::operation(parameters&& param) //
     // array configuration this xclbin describes.
     auto uuid           = m_device->register_xclbin(xclbin);
     m_operation_context = std::make_shared<xrt::hw_context>(*m_device, uuid);
+}
+
+std::unique_ptr<operation::instance>
+operation::create_instance(layer_description::shared description, std::error_code& ec)
+{
+    ec = {};
+
+    if (nullptr == description)
+    {
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return nullptr;
+    }
+
+    auto const* how = find_lowering(description->op_type());
+    if (nullptr == how)
+    {
+        spdlog::error("[nex::amd::operation] no program runs '{}'", description->op_type());
+        ec = std::make_error_code(std::errc::function_not_supported);
+        return nullptr;
+    }
+
+    // Caught here rather than inside the program: a gemm layer handed an rmsnorm xclbin is a
+    // mistake about which operation was opened, and saying so in those words is more use than the
+    // program's own "this design is not mine".
+    if (how->design_op != m_descriptor.op())
+    {
+        spdlog::error("[nex::amd::operation] '{}' needs a '{}' design and this xclbin is '{}'",
+                      description->op_type(),
+                      how->design_op,
+                      m_descriptor.op());
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return nullptr;
+    }
+
+    auto const program = how->build(m_descriptor, *description, ec);
+    if (ec) return nullptr;
+
+    auto const common = m_descriptor.common();
+    auto sequence     = std::make_unique<command_list>(common.generation, common.partition_columns);
+
+    if ((ec = program->wire(*sequence)))
+    {
+        spdlog::error(
+            "[nex::amd::operation] '{}' would not lower: {}", description->name(), ec.message());
+        return nullptr;
+    }
+
+    return create_instance(std::move(sequence));
 }
 
 std::unique_ptr<operation::instance>

@@ -4,6 +4,9 @@
 #include "command.hpp"
 #include "descriptor.hpp"
 
+#include "backend/layer.hpp"
+#include "nex/frontend/layer-description.hpp"
+
 #include <xrt/xrt_device.h>
 #include <xrt/xrt_hw_context.h>
 
@@ -94,10 +97,41 @@ public:
     }
 
     class instance;
+
+    /**
+     * @brief Lowers one layer onto this design and makes it runnable.
+     *
+     * The whole path in one call: the operator's lowering is looked up by what the node calls
+     * itself, that lowering builds the program, the program writes its commands, and the stream
+     * becomes an ELF the array can be given. Nothing here branches on which operator it is --
+     * find_lowering() answers that with a hash lookup, and the builder it hands back is the only
+     * place a program's concrete type has to be named.
+     *
+     * Where the buffers are is not decided here. A program's bindings name the argument slots the
+     * design declares, and which buffer is bound to a slot is settled by set_input()/set_output()
+     * on the network instance, so one lowered layer serves whatever the caller binds to it.
+     *
+     * @param ec why the layer was refused: no lowering for its op_type, a design baked for
+     *        another operator, or a shape this one cannot run. All three are ordinary answers
+     *        while walking a graph, so none of them throws.
+     *
+     * @return nullptr with @p ec set when the layer cannot be run on this design.
+     */
+    std::unique_ptr<instance> create_instance(layer_description::shared description,
+                                              std::error_code&          ec);
+
+    /**
+     * @brief Makes a stream that is already written runnable.
+     *
+     * The way in for a caller that built its program by hand rather than from a graph -- a shape
+     * sweep, a reference test -- and the step create_instance(layer_description) finishes with.
+     *
+     * @throws std::runtime_error when the stream will not finalize or aiebu will not assemble it.
+     */
     std::unique_ptr<instance> create_instance(command_list::unique commands);
 };
 
-class operation::instance final
+class operation::instance final : public nex::layer
 {
     command_list::unique m_commands;
     std::string          m_kernel_name;

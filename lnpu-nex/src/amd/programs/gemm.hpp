@@ -2,7 +2,10 @@
 
 #include "amd/program.hpp"
 
+#include "nex/frontend/layer-description.hpp"
+
 #include <cstdint>
+#include <memory>
 #include <string_view>
 #include <system_error>
 
@@ -101,6 +104,23 @@ public:
          */
         bool wait_for_inputs{false};
     };
+
+    /**
+     * @brief Builds the program that runs @p layer on the design @p metadata describes.
+     *
+     * The shape is read off the layer's inputs and the argument slots off the descriptor, so this
+     * is the one place that knows what a Gemm node means -- and it is beside the program that has
+     * to run it, not in a table that would need to know every operator to hold their fields.
+     *
+     * Every refusal is an @p ec rather than a throw. A graph naming a shape this design cannot
+     * run is an ordinary answer for an orchestrator walking a model, not a programming error, and
+     * it has to be able to say which layer it was without unwinding.
+     *
+     * @return nullptr with @p ec set when the layer cannot be run on this design.
+     */
+    static std::shared_ptr<gemm> lower(descriptor const&        metadata,
+                                       layer_description const& layer,
+                                       std::error_code&         ec);
 
     gemm(design fixed, parameters param);
 

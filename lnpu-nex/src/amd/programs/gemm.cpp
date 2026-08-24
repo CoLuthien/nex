@@ -1,6 +1,7 @@
 #include "gemm.hpp"
 
 #include "amd/descriptor.hpp"
+#include "amd/program-registry.hpp"
 
 #include "amd/commands/block-write.hpp"
 #include "amd/commands/ddr-patch.hpp"
@@ -8,6 +9,8 @@
 #include "amd/commands/queue-push.hpp"
 #include "amd/commands/register-write.hpp"
 #include "amd/commands/tct-wait.hpp"
+
+#include <spdlog/spdlog.h>
 
 #include <memory>
 #include <stdexcept>
@@ -79,6 +82,112 @@ gemm::describe(descriptor const& metadata)
         .tile_n         = metadata.u32("tile", "n"),
         .element_bytes  = metadata.u32("element_bytes"),
     };
+}
+
+std::shared_ptr<gemm>
+gemm::lower(descriptor const& metadata, layer_description const& layer, std::error_code& ec)
+{
+    ec = {};
+
+    auto const refuse = [&ec, &layer](std::errc code, std::string_view why) {
+        spdlog::error("[amd::gemm] '{}' is not a product this design runs: {}", layer.name(), why);
+        ec = std::make_error_code(code);
+        return nullptr;
+    };
+
+    // A bias would have to be added after the last accumulation, and there is no stream carrying
+    // it -- the design's third argument is where C is written, not read.
+    if (layer.input_count() > 2)
+    {
+        return refuse(std::errc::not_supported,
+                      "it has a bias input, which the design has no stream for");
+    }
+
+    auto const* left  = shape_of(layer.input(0));
+    auto const* right = shape_of(layer.input(1));
+    if (nullptr == left or nullptr == right)
+    {
+        return refuse(std::errc::invalid_argument,
+                      "its operands carry no shape; the graph was not shape-inferred");
+    }
+
+    // Anything else is a batch of products, which is more descriptors than are emitted here.
+    if (left->rank() != 2 or right->rank() != 2)
+    {
+        return refuse(std::errc::not_supported, "only the two-dimensional product is emitted here");
+    }
+
+    if (not elements_in(*left) or not elements_in(*right))
+    {
+        return refuse(std::errc::not_supported,
+                      "one of its extents is dynamic, and a descriptor needs a number");
+    }
+
+    auto const rows    = left->extent(0);
+    auto const shared  = left->extent(1);
+    auto const columns = right->extent(1);
+
+    // K is what both operands agree on, and a graph that disagrees with itself would have one of
+    // the two streams walking off the end of its buffer.
+    if (shared != right->extent(0))
+    {
+        return refuse(std::errc::invalid_argument, "its operands disagree about K");
+    }
+
+    // The A stream reads rows as they are stored and B is streamed as [k, n]; a transposed operand
+    // is a different set of descriptors, not a different number in these.
+    for (auto const* which : {"transA", "transB"})
+    {
+        auto const* transposed = layer.attribute_as<std::int64_t>(which);
+        if (nullptr != transposed and *transposed != 0)
+        {
+            return refuse(std::errc::not_supported,
+                          "an operand is transposed, which is another design");
+        }
+    }
+
+    // Nothing in the array scales what it accumulated, so a scale that is not 1 would be dropped
+    // silently -- which is the one outcome worth refusing over.
+    for (auto const* which : {"alpha", "beta"})
+    {
+        auto const* scale = layer.attribute_as<float>(which);
+        if (nullptr != scale and *scale != 1.0F)
+        {
+            return refuse(std::errc::not_supported,
+                          "it scales its product, and the design does not");
+        }
+    }
+
+    design     fixed{};
+    parameters param{};
+    try
+    {
+        fixed = describe(metadata);
+
+        param.a = {.argument_index = metadata.argument("a")};
+        param.b = {.argument_index = metadata.argument("b")};
+        param.c = {.argument_index = metadata.argument("c")};
+    }
+    catch (std::exception const& thrown)
+    {
+        // describe() and argument() throw at a mismatch between this program and the xclbin it
+        // was handed, which is the caller's mistake and not this layer's. It still has to come
+        // back as an error rather than unwind a walk over a whole graph.
+        spdlog::error("[amd::gemm] '{}': {}", layer.name(), thrown.what());
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return nullptr;
+    }
+
+    param.m = static_cast<std::uint32_t>(rows);
+    param.k = static_cast<std::uint32_t>(shared);
+    param.n = static_cast<std::uint32_t>(columns);
+
+    // A network runs one layer after another against a single hardware context, which is the case
+    // this flag exists for: the A and B streams of the run before this one have to have drained
+    // before this one changes what they carry.
+    param.wait_for_inputs = true;
+
+    return std::make_shared<gemm>(std::move(fixed), std::move(param));
 }
 
 gemm::gemm(design fixed, parameters param) : m_design(std::move(fixed)), m_param(std::move(param))

@@ -19,6 +19,7 @@ target_sources(lnpu_nex
 PRIVATE
     operation.cpp
     operation-registry.cpp
+    program-registry.cpp
     device.cpp
     command.cpp
 

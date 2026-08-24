@@ -1,12 +1,15 @@
 #include "rmsnorm.hpp"
 
 #include "amd/descriptor.hpp"
+#include "amd/program-registry.hpp"
 
 #include "amd/commands/block-write.hpp"
 #include "amd/commands/ddr-patch.hpp"
 #include "amd/commands/issue-token.hpp"
 #include "amd/commands/queue-push.hpp"
 #include "amd/commands/tct-wait.hpp"
+
+#include <spdlog/spdlog.h>
 
 #include <memory>
 #include <stdexcept>
@@ -83,6 +86,97 @@ rmsnorm::describe(descriptor const& metadata)
         .weighted      = metadata.flag("weighted"),
         .element_bytes = metadata.u32("element_bytes"),
     };
+}
+
+std::shared_ptr<rmsnorm>
+rmsnorm::lower(descriptor const& metadata, layer_description const& layer, std::error_code& ec)
+{
+    ec = {};
+
+    auto const refuse = [&ec, &layer](std::errc code, std::string const& why) {
+        spdlog::error(
+            "[amd::rmsnorm] '{}' is not a run this design normalizes: {}", layer.name(), why);
+        ec = std::make_error_code(code);
+        return nullptr;
+    };
+
+    auto const* input = shape_of(layer.input(0));
+    if (nullptr == input)
+    {
+        return refuse(std::errc::invalid_argument,
+                      "its input carries no shape; the graph was not shape-inferred");
+    }
+
+    // Everything from `axis` onwards is one normalized group; what comes before it is a count of
+    // such groups. The design normalizes a group per core pass, so the two have to be told apart
+    // here rather than left as one total.
+    auto const  rank   = static_cast<std::int64_t>(input->rank());
+    auto const* stated = layer.attribute_as<std::int64_t>("axis");
+
+    // onnx counts a negative axis from the end, and -1 is the default.
+    auto axis = nullptr == stated ? -1 : *stated;
+    if (axis < 0) axis += rank;
+
+    if (axis < 0 or axis >= rank)
+    {
+        return refuse(std::errc::invalid_argument, "its axis is outside the input's rank");
+    }
+
+    auto const total = elements_in(*input);
+    auto const group = elements_in(*input, static_cast<lnpu::layout::rank_type>(axis));
+    if (not total or not group)
+    {
+        return refuse(std::errc::not_supported,
+                      "one of its extents is dynamic, and a descriptor needs a number");
+    }
+
+    design     fixed{};
+    parameters param{};
+    try
+    {
+        fixed = describe(metadata);
+
+        param.input  = {.argument_index = metadata.argument("input")};
+        param.output = {.argument_index = metadata.argument("output")};
+        if (fixed.weighted) param.weight = {.argument_index = metadata.argument("weight")};
+    }
+    catch (std::exception const& thrown)
+    {
+        // describe() and argument() throw at a mismatch between this program and the xclbin it
+        // was handed, which is the caller's mistake and not this layer's. It still has to come
+        // back as an error rather than unwind a walk over a whole graph.
+        spdlog::error("[amd::rmsnorm] '{}': {}", layer.name(), thrown.what());
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return nullptr;
+    }
+
+    // A weight stream is either baked in or it is not, and a design without one would ignore a
+    // scale the graph asked for while a design with one would stream whatever the argument
+    // happened to be bound to. Neither says anything at run time.
+    auto const scaled = layer.input_count() > 1;
+    if (scaled != fixed.weighted)
+    {
+        return refuse(
+            std::errc::invalid_argument,
+            fixed.weighted
+                ? "the design was baked with a weight stream and the layer has no scale"
+                : "the layer has a scale and the design was baked without a weight stream");
+    }
+
+    // wire() refuses a total the design was not baked for, but the group is the one this can
+    // check and it cannot: a core normalizes `tile` elements per pass, so a hidden size that is
+    // not the tile divides the run into the wrong groups and every one of them comes back
+    // normalized by the wrong denominator. Nothing downstream can see that.
+    if (*group != fixed.tile)
+    {
+        return refuse(std::errc::invalid_argument,
+                      "this xclbin normalizes groups of " + std::to_string(fixed.tile) +
+                          " elements, and the layer's are " + std::to_string(*group));
+    }
+
+    param.elements = static_cast<std::uint32_t>(*total);
+
+    return std::make_shared<rmsnorm>(std::move(fixed), std::move(param));
 }
 
 rmsnorm::rmsnorm(design fixed, parameters param)
