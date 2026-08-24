@@ -28,8 +28,9 @@ public:
     layer_description& operator=(layer_description const&) = delete;
     layer_description& operator=(layer_description&&)      = delete;
 
-    virtual layer_schema const* schema() const = 0;
-    virtual std::string_view    name() const   = 0;
+    virtual layer_schema const* schema() const  = 0;
+    virtual std::string_view    name() const    = 0;
+    virtual std::string_view    op_type() const = 0;
 
     virtual std::size_t input_count() const  = 0;
     virtual std::size_t output_count() const = 0;

@@ -47,7 +47,7 @@ public:
     std::string_view    name() const override;
 
     /// What the node calls itself in onnx terms; not part of the frontend interface.
-    std::string_view op_type() const { return m_op_type; }
+    std::string_view op_type() const override { return m_op_type; }
     std::string_view domain() const { return m_domain; }
     std::int64_t     opset() const { return m_opset; }
 
