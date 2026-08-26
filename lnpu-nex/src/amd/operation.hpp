@@ -3,8 +3,8 @@
 
 #include "command.hpp"
 #include "descriptor.hpp"
+#include "design.hpp"
 
-#include "backend/layer.hpp"
 #include "nex/frontend/layer-description.hpp"
 
 #include <xrt/xrt_device.h>
@@ -17,9 +17,12 @@
 
 #include <spdlog/spdlog.h>
 
+#include <concepts>
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <system_error>
+#include <vector>
 
 namespace lnpu::nex::amd
 {
@@ -73,30 +76,7 @@ public:
     /// What the xclbin says about itself. A program's describe() reads its fields out of this.
     descriptor const& metadata() const { return m_descriptor; }
 
-    /**
-     * @brief Builds a program against this design.
-     *
-     * The pairing between a program and the design it was baked for is settled here, and this is
-     * the only place it can go wrong: describe() reads the descriptor and refuses one belonging
-     * to another operator. After that the program carries its design as a value and the pairing
-     * is a fact rather than a convention the caller has to keep.
-     *
-     * One operation serves as many programs as the model has calls to it -- a single gemm xclbin
-     * runs every projection -- so this is called per call site, not once per xclbin.
-     *
-     * This is convenience, not the only way in: Program{design, parameters} stays public, so a
-     * reference test builds and checks the same program from a descriptor literal without an
-     * array to open.
-     *
-     * @throws whatever Program::describe() throws.
-     */
-    template <typename Program>
-    std::shared_ptr<Program> make(typename Program::parameters shape) const
-    {
-        return std::make_shared<Program>(Program::describe(m_descriptor), std::move(shape));
-    }
-
-    class instance;
+    class executable;
 
     /**
      * @brief Lowers one layer onto this design and makes it runnable.
@@ -117,8 +97,8 @@ public:
      *
      * @return nullptr with @p ec set when the layer cannot be run on this design.
      */
-    std::unique_ptr<instance> create_instance(layer_description::shared description,
-                                              std::error_code&          ec);
+    std::unique_ptr<executable> create_instance(layer_description::shared description,
+                                                std::error_code&          ec);
 
     /**
      * @brief Makes a stream that is already written runnable.
@@ -128,10 +108,10 @@ public:
      *
      * @throws std::runtime_error when the stream will not finalize or aiebu will not assemble it.
      */
-    std::unique_ptr<instance> create_instance(command_list::unique commands);
+    std::unique_ptr<executable> create_instance(command_list::unique commands);
 };
 
-class operation::instance final : public nex::layer
+class operation::executable final
 {
     command_list::unique m_commands;
     std::string          m_kernel_name;
@@ -141,12 +121,40 @@ class operation::instance final : public nex::layer
     std::unique_ptr<xrt::module>      m_module;
     std::unique_ptr<xrt::ext::kernel> m_kernel;
 
-public:
-    using unique = std::unique_ptr<operation::instance>;
+    std::vector<binding> m_bindings;
 
-    explicit instance(std::string                      kernel_name,
-                      std::shared_ptr<xrt::hw_context> context,
-                      command_list::unique             commands);
+public:
+    using unique = std::unique_ptr<operation::executable>;
+
+    explicit executable(std::string                      kernel_name,
+                        std::shared_ptr<xrt::hw_context> context,
+                        command_list::unique             commands,
+                        std::vector<binding>             bindings = {});
+
+    /// The operands the program lowered, for a caller that wants to bind them by name. Empty for
+    /// a stream built by hand, which has no graph behind it and is run positionally instead.
+    std::span<binding const> bindings() const { return m_bindings; }
+
+    /**
+     * @brief Registers caller-owned storage as a kernel argument, without allocating or copying.
+     *
+     * The bytes belong to whoever allocated them -- a graph's memory planner hands out slices of
+     * one arena -- and the returned object is a view the driver can resolve an address from. It
+     * must not outlive the storage it names.
+     *
+     * @throws std::invalid_argument for empty storage, and whatever XRT throws for storage it
+     *         will not take. A host pointer XRT cannot pin is a refusal, not a wrong answer.
+     */
+    xrt::bo wrap_argument(void* data, std::size_t bytes) const;
+
+    /**
+     * @brief Runs the operation once and waits for it, with the buffers given by argument index.
+     *
+     * @param parameters indexed the way descriptor::argument() counts -- 0 is the design's first
+     *        declared buffer, not the kernel's first argument. The three the kernel takes ahead
+     *        of those are supplied here, so a caller never restates them.
+     */
+    std::error_code execute(std::span<xrt::bo> parameters);
 
     /**
      * @brief Runs the operation once and waits for it.
@@ -159,6 +167,7 @@ public:
      * length, which this flow does not use -- the module already carries the instructions.
      */
     template <typename... Args>
+    requires(std::same_as<Args, xrt::bo> and ...)
     std::error_code execute(Args... args)
     {
         auto const state = m_kernel->operator()(3, 0, 0, args...).wait();

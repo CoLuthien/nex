@@ -3,6 +3,8 @@
 
 #include "program-registry.hpp"
 
+#include "cmn/ranges/enumerate.hpp"
+
 #include <aiebu/aiebu.h>
 
 #include <xrt/experimental/xrt_xclbin.h>
@@ -121,7 +123,7 @@ operation::operation(parameters&& param) //
     m_operation_context = std::make_shared<xrt::hw_context>(*m_device, uuid);
 }
 
-std::unique_ptr<operation::instance>
+std::unique_ptr<operation::executable>
 operation::create_instance(layer_description::shared description, std::error_code& ec)
 {
     ec = {};
@@ -154,7 +156,10 @@ operation::create_instance(layer_description::shared description, std::error_cod
     }
 
     auto const program = how->build(m_descriptor, *description, ec);
-    if (ec) return nullptr;
+    if (ec)
+    {
+        return nullptr;
+    }
 
     auto const common = m_descriptor.common();
     auto sequence     = std::make_unique<command_list>(common.generation, common.partition_columns);
@@ -166,22 +171,28 @@ operation::create_instance(layer_description::shared description, std::error_cod
         return nullptr;
     }
 
-    return create_instance(std::move(sequence));
+    // The names go with the stream from here on. This is the last point at which anything knows
+    // both which tensor is which and which argument carries it -- the program and the layer
+    // description are both let go on the way out.
+    return std::make_unique<operation::executable>(
+        m_kernel_name, m_operation_context, std::move(sequence), program->bindings());
 }
 
-std::unique_ptr<operation::instance>
+std::unique_ptr<operation::executable>
 operation::create_instance(command_list::unique commands)
 {
-    return std::make_unique<operation::instance>(
+    return std::make_unique<operation::executable>(
         m_kernel_name, m_operation_context, std::move(commands));
 }
 
-operation::instance::instance(std::string                      kernel_name,
-                              std::shared_ptr<xrt::hw_context> context,
-                              command_list::unique             commands)
+operation::executable::executable(std::string                      kernel_name,
+                                  std::shared_ptr<xrt::hw_context> context,
+                                  command_list::unique             commands,
+                                  std::vector<binding>             bindings)
     : m_kernel_name(std::move(kernel_name)), //
       m_commands(std::move(commands)),       //
-      m_context(context)
+      m_context(std::move(context)),         //
+      m_bindings(std::move(bindings))
 {
     void*       elf{nullptr};
     std::size_t elf_size{0};
@@ -200,4 +211,49 @@ operation::instance::instance(std::string                      kernel_name,
 
     std::free(elf);
 }
+
+xrt::bo
+operation::executable::wrap_argument(void* data, std::size_t bytes) const
+{
+    if (nullptr == data or 0 == bytes)
+    {
+        throw std::invalid_argument("[nex::amd] a kernel argument cannot be empty storage");
+    }
+
+    return xrt::bo{*m_context, data, bytes, xrt::bo::flags::host_only, xrt::memory_group{0}};
+}
+
+std::error_code
+operation::executable::execute(std::span<xrt::bo> parameters)
+{
+    xrt::run r{*m_kernel};
+
+    // The same three the variadic path passes: ERT_START_NPU, then the instruction buffer and its
+    // length, which this flow does not use because the module already carries the instructions.
+    // The design's own arguments start after them, which is why the offset is here and not in
+    // descriptor::argument() -- what that counts is the "args" list the xclbin declares, and that
+    // list names buffers only.
+    r.set_arg(0, 3);
+    r.set_arg(1, 0);
+    r.set_arg(2, 0);
+
+    for (auto [idx, param] : parameters | lnpu::views::enumerate)
+    {
+        r.set_arg(static_cast<int>(idx) + 3, param);
+    }
+
+    r.start();
+
+    auto state = r.wait();
+
+    if (state != ERT_CMD_STATE_COMPLETED)
+    {
+        // The state is the only thing the command tells us, so it is what the caller gets.
+        spdlog::error("[nex::amd] '{}' ended in state {}", m_kernel_name, static_cast<int>(state));
+        return std::make_error_code(std::errc::io_error);
+    }
+
+    return {};
+}
+
 } // namespace lnpu::nex::amd
