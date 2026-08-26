@@ -254,8 +254,9 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
                                                   started_reference)
                         .count());
 
-        say("make<gemm> (operation 이 읽은 설계로)");
-        auto const through_op = loaded->make<programs::gemm>(one.param);
+        say("gemm 만들기 (operation 이 읽은 설계로)");
+        auto const through_op = std::make_shared<programs::gemm>(
+            programs::gemm::describe(loaded->metadata()), one.param);
 
         auto again =
             std::make_unique<command_list>(fixed.common.generation, fixed.common.partition_columns);
@@ -278,14 +279,19 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
         say("create_instance (aiebu -> elf -> module -> kernel)");
         auto running = loaded->create_instance(std::move(again));
 
-        say("버퍼 (xrt::bo host_only)");
-        auto a_bo = data_buffer(*owner.handle(), made.a.size() * 2);
-        auto b_bo = data_buffer(*owner.handle(), made.b.size() * 2);
-        auto c_bo = data_buffer(*owner.handle(), made.c.size() * 2);
+        // The storage is ours and the executable only registers it, which is the arrangement a
+        // network has: its memory planner owns every tensor and hands the driver a view.
+        say("버퍼 (호스트 저장소를 커널 인자로 등록)");
+        argument_storage a_mem{made.a.size() * 2};
+        argument_storage b_mem{made.b.size() * 2};
+        argument_storage c_mem{made.c.size() * 2};
 
-        std::memcpy(a_bo.map(), made.a.data(), made.a.size() * 2);
-        std::memcpy(b_bo.map(), made.b.data(), made.b.size() * 2);
-        std::memset(c_bo.map(), 0, made.c.size() * 2);
+        auto a_bo = running->wrap_argument(a_mem.data(), a_mem.size());
+        auto b_bo = running->wrap_argument(b_mem.data(), b_mem.size());
+        auto c_bo = running->wrap_argument(c_mem.data(), c_mem.size());
+
+        std::memcpy(a_mem.data(), made.a.data(), made.a.size() * 2);
+        std::memcpy(b_mem.data(), made.b.data(), made.b.size() * 2);
 
         a_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
         b_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
@@ -296,7 +302,7 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
          * previous run would read as a pass.
          */
         auto const run_once = [&](char const* what) -> deviation {
-            std::memset(c_bo.map(), 0, made.c.size() * 2);
+            std::memset(c_mem.data(), 0, made.c.size() * 2);
             c_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
 
             auto const started = std::chrono::steady_clock::now();
@@ -315,8 +321,7 @@ run_gemm(fs::path const& xclbin_path, std::vector<gemm_case> const& shapes, opti
             c_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
 
             auto const macs = 2.0 * one.shape.m * one.shape.k * one.shape.n;
-            auto const got  = std::span{reinterpret_cast<std::uint16_t const*>(c_bo.map()),
-                                        made.c.size()};
+            auto const got  = c_mem.as<std::uint16_t>(made.c.size());
             auto const want = std::span{made.c.data(), made.c.size()};
 
             std::printf("     %s  %.1f us (%.1f GFLOP/s)\n", what, spent, macs / spent / 1e3);

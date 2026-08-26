@@ -1,8 +1,7 @@
 #pragma once
 
 // What every case needs and none of them should each write again: bf16, file reading, the
-// comparison against a reference, and the one way of allocating a buffer that works on both
-// driver stacks.
+// comparison against a reference, and the page-aligned storage a kernel argument is pinned from.
 
 #include "amd/command.hpp"
 
@@ -10,9 +9,11 @@
 #include <xrt/xrt_device.h>
 #include <xrt/experimental/xrt_xclbin.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -130,10 +131,44 @@ void print(deviation const& off, std::size_t total);
 /// Prints the first few of each, so a layout that is wrong end-to-end is visible at a glance.
 void show_head(std::span<std::uint16_t const> got, std::span<std::uint16_t const> want);
 
-/// Allocated the one way that works on both driver stacks. An xrt::bo subclass handed to the
-/// variadic kernel call is taken for a scalar by older XRT and rejected as
-/// "patch_value() only supports 64-bit values or less".
-xrt::bo data_buffer(xrt::device const& device, std::size_t bytes);
+/**
+ * @brief Page-aligned host bytes to hand a kernel as an argument.
+ *
+ * The runtime does not allocate a layer's tensors: a graph's memory planner owns them and
+ * executable::wrap_argument() only registers what it owns with the driver. This is that memory
+ * planner reduced to what one test needs, and using it is what makes this test walk the same path
+ * a network will.
+ *
+ * A std::vector is not a substitute. Nothing promises its data() sits on a page boundary, and
+ * storage XRT cannot pin is refused rather than quietly copied. The allocation is rounded up to
+ * whole pages for the same reason, so #size is what was pinned rather than what was asked for.
+ */
+class argument_storage
+{
+    struct release
+    {
+        void operator()(void* held) const noexcept;
+    };
+
+    std::unique_ptr<std::byte, release> m_held;
+    std::size_t                         m_bytes{};
+
+public:
+    argument_storage() = default;
+
+    /// @throws std::bad_alloc
+    explicit argument_storage(std::size_t bytes);
+
+    std::byte*  data() const { return m_held.get(); }
+    std::size_t size() const { return m_bytes; }
+
+    /// The bytes read back as elements, for comparing a result against a reference.
+    template <typename T>
+    std::span<T const> as(std::size_t count) const
+    {
+        return std::span{reinterpret_cast<T const*>(data()), count};
+    }
+};
 
 void describe_signature(xrt::xclbin const& binary);
 

@@ -135,8 +135,9 @@ run_rmsnorm(fs::path const& xclbin_path, fs::path const& reference, options cons
     // read the design out of the xclbin it opened. The stream above came from a descriptor this
     // test parsed itself, so a difference here would mean the two paths disagree about the design
     // -- and only one of them is the one that runs.
-    say("make<rmsnorm> (operation 이 읽은 설계로)");
-    auto const through_op = loaded->make<programs::rmsnorm>(param);
+    say("rmsnorm 만들기 (operation 이 읽은 설계로)");
+    auto const through_op = std::make_shared<programs::rmsnorm>(
+        programs::rmsnorm::describe(loaded->metadata()), param);
 
     auto again =
         std::make_unique<command_list>(fixed.common.generation, fixed.common.partition_columns);
@@ -159,14 +160,19 @@ run_rmsnorm(fs::path const& xclbin_path, fs::path const& reference, options cons
     say("create_instance (aiebu -> elf -> module -> kernel)");
     auto running = loaded->create_instance(std::move(again));
 
-    say("버퍼 (xrt::bo host_only)");
-    auto in_bo  = data_buffer(*owner.handle(), input.size());
-    auto out_bo = data_buffer(*owner.handle(), golden.size());
-    auto w_bo   = data_buffer(*owner.handle(), fixed.weighted ? weight.size() : std::size_t{4});
+    // The storage is ours and the executable only registers it, which is the arrangement a
+    // network has: its memory planner owns every tensor and hands the driver a view.
+    say("버퍼 (호스트 저장소를 커널 인자로 등록)");
+    argument_storage in_mem{input.size()};
+    argument_storage out_mem{golden.size()};
+    argument_storage w_mem{fixed.weighted ? weight.size() : std::size_t{4}};
 
-    std::memcpy(in_bo.map(), input.data(), input.size());
-    std::memset(out_bo.map(), 0, golden.size());
-    if (fixed.weighted) std::memcpy(w_bo.map(), weight.data(), weight.size());
+    auto in_bo  = running->wrap_argument(in_mem.data(), in_mem.size());
+    auto out_bo = running->wrap_argument(out_mem.data(), out_mem.size());
+    auto w_bo   = running->wrap_argument(w_mem.data(), w_mem.size());
+
+    std::memcpy(in_mem.data(), input.data(), input.size());
+    if (fixed.weighted) std::memcpy(w_mem.data(), weight.data(), weight.size());
 
     in_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
     out_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
@@ -190,7 +196,7 @@ run_rmsnorm(fs::path const& xclbin_path, fs::path const& reference, options cons
     out_bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
 
     auto const count = golden.size() / sizeof(std::uint16_t);
-    auto const got   = std::span{reinterpret_cast<std::uint16_t const*>(out_bo.map()), count};
+    auto const got   = out_mem.as<std::uint16_t>(count);
     auto const want  = std::span{reinterpret_cast<std::uint16_t const*>(golden.data()), count};
 
     say("결과");

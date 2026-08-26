@@ -3,6 +3,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <new>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
@@ -144,10 +147,30 @@ show_head(std::span<std::uint16_t const> got, std::span<std::uint16_t const> wan
     std::printf("\n");
 }
 
-xrt::bo
-data_buffer(xrt::device const& device, std::size_t bytes)
+void
+argument_storage::release::operator()(void* held) const noexcept
 {
-    return xrt::bo{device, bytes, xrt::bo::flags::host_only, xrt::memory_group{0}};
+    std::free(held);
+}
+
+argument_storage::argument_storage(std::size_t bytes)
+{
+    // aligned_alloc takes a size that is a whole number of alignments, and XRT pins whole pages
+    // anyway -- so the rounding is not waste, it is what actually gets registered.
+    constexpr std::size_t kPage = 4096;
+
+    m_bytes = (bytes + kPage - 1) / kPage * kPage;
+
+    auto* const raw = std::aligned_alloc(kPage, m_bytes);
+    if (nullptr == raw)
+    {
+        throw std::bad_alloc{};
+    }
+
+    // Cleared on purpose: a result buffer that the kernel never wrote has to read as zeros rather
+    // than as whatever the allocator handed back, which is what makes an all-zero result a signal.
+    std::memset(raw, 0, m_bytes);
+    m_held.reset(static_cast<std::byte*>(raw));
 }
 
 void
