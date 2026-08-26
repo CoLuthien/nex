@@ -156,7 +156,7 @@ class argument_storage
 public:
     argument_storage() = default;
 
-    /// @throws std::bad_alloc
+    /// @throws std::bad_alloc, from the aligned operator new this is built on.
     explicit argument_storage(std::size_t bytes);
 
     std::byte*  data() const { return m_held.get(); }

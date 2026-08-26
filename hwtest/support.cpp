@@ -3,11 +3,10 @@
 
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
-#include <new>
 #include <fstream>
 #include <iterator>
+#include <new>
 #include <stdexcept>
 
 namespace hw
@@ -147,28 +146,36 @@ show_head(std::span<std::uint16_t const> got, std::span<std::uint16_t const> wan
     std::printf("\n");
 }
 
+namespace
+{
+
+/// The unit XRT pins in, on both targets this test is carried to.
+constexpr std::size_t      kPageBytes = 4096;
+constexpr std::align_val_t kPage{kPageBytes};
+
+} // namespace
+
 void
 argument_storage::release::operator()(void* held) const noexcept
 {
-    std::free(held);
+    // Aligned storage is released through the aligned overload, or the allocator is handed back a
+    // pointer it never gave out.
+    ::operator delete(held, kPage);
 }
 
 argument_storage::argument_storage(std::size_t bytes)
 {
-    // aligned_alloc takes a size that is a whole number of alignments, and XRT pins whole pages
-    // anyway -- so the rounding is not waste, it is what actually gets registered.
-    constexpr std::size_t kPage = 4096;
+    // XRT pins whole pages regardless, so rounding up is not waste: it is what actually gets
+    // registered, and it is also what makes the size a whole number of alignments.
+    m_bytes = (bytes + kPageBytes - 1) / kPageBytes * kPageBytes;
 
-    m_bytes = (bytes + kPage - 1) / kPage * kPage;
+    // Aligned operator new rather than std::aligned_alloc, which MSVC does not provide -- this is
+    // the same allocation and needs no platform branch around it. It throws rather than returning
+    // null, so there is nothing to check.
+    auto* const raw = ::operator new(m_bytes, kPage);
 
-    auto* const raw = std::aligned_alloc(kPage, m_bytes);
-    if (nullptr == raw)
-    {
-        throw std::bad_alloc{};
-    }
-
-    // Cleared on purpose: a result buffer that the kernel never wrote has to read as zeros rather
-    // than as whatever the allocator handed back, which is what makes an all-zero result a signal.
+    // Cleared on purpose: a result buffer the kernel never wrote has to read as zeros rather than
+    // as whatever the allocator handed back, which is what makes an all-zero result a signal.
     std::memset(raw, 0, m_bytes);
     m_held.reset(static_cast<std::byte*>(raw));
 }
