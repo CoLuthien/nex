@@ -164,9 +164,13 @@ gemm::lower(descriptor const& metadata, layer_description const& layer, std::err
     {
         fixed = describe(metadata);
 
-        param.a = {.argument_index = metadata.argument("a")};
-        param.b = {.argument_index = metadata.argument("b")};
-        param.c = {.argument_index = metadata.argument("c")};
+        // Which of the node's tensors each argument is, is the piece only this function knows.
+        param.a = {.argument_index = metadata.argument("a"),
+                   .tensor         = std::string{layer.input_name(0)}};
+        param.b = {.argument_index = metadata.argument("b"),
+                   .tensor         = std::string{layer.input_name(1)}};
+        param.c = {.argument_index = metadata.argument("c"),
+                   .tensor         = std::string{layer.output_name(0)}};
     }
     catch (std::exception const& thrown)
     {
@@ -214,6 +218,12 @@ gemm::buffer_descriptors_used() const
 {
     // A column carries its slice of C, its slice of B, and on some columns a share of A.
     return 3;
+}
+
+std::vector<binding>
+gemm::bindings() const
+{
+    return {m_param.a, m_param.b, m_param.c};
 }
 
 std::error_code

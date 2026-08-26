@@ -114,7 +114,8 @@ public:
      */
     std::error_code wire(command_list& sequence) const override;
 
-    std::uint32_t buffer_descriptors_used() const override;
+    std::uint32_t        buffer_descriptors_used() const override;
+    std::vector<binding> bindings() const override;
 
     /// Cores the design puts to work: columns * channels.
     std::uint32_t cores() const;

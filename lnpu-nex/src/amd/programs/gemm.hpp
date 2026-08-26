@@ -124,8 +124,9 @@ public:
 
     gemm(design fixed, parameters param);
 
-    std::error_code wire(command_list& sequence) const override;
-    std::uint32_t   buffer_descriptors_used() const override;
+    std::error_code      wire(command_list& sequence) const override;
+    std::uint32_t        buffer_descriptors_used() const override;
+    std::vector<binding> bindings() const override;
 
     /// Times a core walks its tile along K, which is one of the counts the cores are told.
     std::uint32_t k_steps() const;

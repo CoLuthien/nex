@@ -136,9 +136,30 @@ rmsnorm::lower(descriptor const& metadata, layer_description const& layer, std::
     {
         fixed = describe(metadata);
 
-        param.input  = {.argument_index = metadata.argument("input")};
-        param.output = {.argument_index = metadata.argument("output")};
-        if (fixed.weighted) param.weight = {.argument_index = metadata.argument("weight")};
+        // A weight stream is either baked in or it is not, and a design without one would ignore
+        // a scale the graph asked for while a design with one would stream whatever the argument
+        // happened to be bound to. Neither says anything at run time. This is also what makes
+        // input(1) below a tensor that exists, so it is asked before anything names one.
+        auto const scaled = layer.input_count() > 1;
+        if (scaled != fixed.weighted)
+        {
+            return refuse(
+                std::errc::invalid_argument,
+                fixed.weighted
+                    ? "the design was baked with a weight stream and the layer has no scale"
+                    : "the layer has a scale and the design was baked without a weight stream");
+        }
+
+        // Which of the node's tensors each argument is, is the piece only this function knows.
+        param.input  = {.argument_index = metadata.argument("input"),
+                        .tensor         = std::string{layer.input_name(0)}};
+        param.output = {.argument_index = metadata.argument("output"),
+                        .tensor         = std::string{layer.output_name(0)}};
+        if (fixed.weighted)
+        {
+            param.weight = {.argument_index = metadata.argument("weight"),
+                            .tensor         = std::string{layer.input_name(1)}};
+        }
     }
     catch (std::exception const& thrown)
     {
@@ -148,19 +169,6 @@ rmsnorm::lower(descriptor const& metadata, layer_description const& layer, std::
         spdlog::error("[amd::rmsnorm] '{}': {}", layer.name(), thrown.what());
         ec = std::make_error_code(std::errc::invalid_argument);
         return nullptr;
-    }
-
-    // A weight stream is either baked in or it is not, and a design without one would ignore a
-    // scale the graph asked for while a design with one would stream whatever the argument
-    // happened to be bound to. Neither says anything at run time.
-    auto const scaled = layer.input_count() > 1;
-    if (scaled != fixed.weighted)
-    {
-        return refuse(
-            std::errc::invalid_argument,
-            fixed.weighted
-                ? "the design was baked with a weight stream and the layer has no scale"
-                : "the layer has a scale and the design was baked without a weight stream");
     }
 
     // wire() refuses a total the design was not baked for, but the group is the one this can
@@ -203,6 +211,13 @@ rmsnorm::buffer_descriptors_used() const
     // Reading and writing are separate descriptors even on the same column, and a weight stream
     // occupies one more. The busiest column is the one carrying a full pair of channels of each.
     return kChannelsPerColumn * (m_design.weighted ? 3 : 2);
+}
+
+std::vector<binding>
+rmsnorm::bindings() const
+{
+    if (m_design.weighted) return {m_param.input, m_param.weight, m_param.output};
+    return {m_param.input, m_param.output};
 }
 
 std::error_code

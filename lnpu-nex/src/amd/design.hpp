@@ -3,6 +3,7 @@
 #include "command.hpp"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace lnpu::nex::amd
@@ -57,7 +58,7 @@ struct design
 };
 
 /**
- * @brief Where a transfer's base address comes from: a kernel argument and a byte offset into it.
+ * @brief One operand: the kernel argument its bytes arrive through, and which graph tensor it is.
  *
  * The address is not known when the commands are written. ddr_patch leaves a request for XRT to
  * fill it in from the bound buffer just before the run, which is what lets one instruction stream
@@ -65,11 +66,31 @@ struct design
  *
  * Take the index from descriptor::argument() rather than counting the arguments by hand. An index
  * off by one reads a different buffer, which is a thing the hardware does without complaint.
+ *
+ * #tensor is the other half of the same fact and is why this is one struct rather than two: an
+ * argument index is only actionable next to the name of what belongs there. A program's lower()
+ * is the one place that knows which of a node's operands each argument is -- that a Gemm's second
+ * input is B -- so it is the one place that fills this, and program::bindings() then hands the
+ * pairing to a backend layer that needs to know nothing about gemms.
  */
 struct binding
 {
     command::word argument_index{};
     command::word offset_bytes{};
+
+    /**
+     * @brief Name as the graph gave it, copied because the graph does not outlive this.
+     *
+     * layer_description::input_name() is a view into a value_description the parsed graph owns,
+     * and a program is built once and then kept -- past create_instance(), past the description
+     * that was handed in. So the name is taken by value here rather than pointed at.
+     *
+     * Empty means there is no name to bind by, which happens two ways and reads the same to a
+     * caller: the program was built from a descriptor literal instead of lowered from a layer,
+     * or the graph left this operand unnamed. Either way a backend layer has to refuse it rather
+     * than bind nothing.
+     */
+    std::string tensor;
 };
 
 } // namespace lnpu::nex::amd

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <memory>
 #include <system_error>
+#include <vector>
 
 namespace lnpu::nex::amd
 {
@@ -41,6 +42,20 @@ public:
     /// Buffer descriptors this program claims on its busiest column, so that several programs
     /// sharing one sequence can be handed ranges that do not overlap.
     virtual std::uint32_t buffer_descriptors_used() const = 0;
+
+    /**
+     * @brief Every operand this program lowered, in no particular order.
+     *
+     * What a backend layer needs to bind a graph tensor is a name and the argument slot the
+     * ddr_patch commands refer to, and both are already in the bindings lower() filled -- so this
+     * hands those over rather than restating them. The layer builds a name-to-argument map once
+     * and never learns what a gemm is; the program never learns what an xrt::bo is.
+     *
+     * A name can be empty -- see binding::tensor for the two ways -- and such a program cannot be
+     * driven by name at all. It is run positionally instead, so a layer handed one has to refuse
+     * it rather than bind nothing.
+     */
+    virtual std::vector<binding> bindings() const = 0;
 
 protected:
     program() = default;
