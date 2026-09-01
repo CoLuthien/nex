@@ -31,6 +31,22 @@ matches(value_description const& expected, encoded const& target)
 
 } // namespace
 
+layer::unique
+layer::create(layer_description const& description, operation::executable::unique exec)
+{
+    layer::unique result{};
+    try
+    {
+        result = std::make_unique<layer>(description, std::move(exec));
+    }
+    catch (std::exception const& e)
+    {
+        spdlog::error(e.what());
+    }
+
+    return result;
+}
+
 layer::layer(layer_description const& description, operation::executable::unique executable)
     : m_executable(std::move(executable))
 {
@@ -93,13 +109,11 @@ layer::execute()
     // only ever bound or cleared through bind()/reset().
     if (m_bound != m_slots.size())
     {
-        spdlog::error("[nex::amd::layer] {} of {} tensors are bound",
-                      m_bound,
-                      m_slots.size());
+        spdlog::error("[nex::amd::layer] {} of {} tensors are bound", m_bound, m_slots.size());
         return std::make_error_code(std::errc::no_such_device_or_address);
     }
 
-    return m_executable->execute(std::span<xrt::bo>{m_arguments});
+    return m_executable->execute(m_arguments);
 }
 
 std::error_code
@@ -138,8 +152,9 @@ layer::bind(std::string_view key, bool produced, encoded::shared target)
     auto& held = found->second;
     if (held.produced != produced)
     {
-        return refuse(key, held.produced ? "is a result, and was bound as an operand"
-                                         : "is an operand, and was bound as a result");
+        return refuse(key,
+                      held.produced ? "is a result, and was bound as an operand"
+                                    : "is an operand, and was bound as a result");
     }
 
     if (nullptr == target)
@@ -185,8 +200,9 @@ layer::reset(std::string_view key, bool produced)
     auto& held = found->second;
     if (held.produced != produced)
     {
-        return refuse(key, held.produced ? "is a result, and was reset as an operand"
-                                         : "is an operand, and was reset as a result");
+        return refuse(key,
+                      held.produced ? "is a result, and was reset as an operand"
+                                    : "is an operand, and was reset as a result");
     }
 
     if (nullptr == held.target) return {};

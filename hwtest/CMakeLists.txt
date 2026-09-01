@@ -25,6 +25,7 @@ endif()
 message(STATUS "XRT: ${XRT_DIR}")
 
 set(NEX_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../lnpu-nex/src")
+set(AMD_SRC "${NEX_SRC}/backend/amd")
 
 add_executable(nex-hwtest
     main.cpp
@@ -32,21 +33,21 @@ add_executable(nex-hwtest
     case-rmsnorm.cpp
     case-gemm.cpp
 
-    ${NEX_SRC}/amd/command.cpp
-    ${NEX_SRC}/amd/descriptor.cpp
-    ${NEX_SRC}/amd/commands/block-write.cpp
-    ${NEX_SRC}/amd/commands/ddr-patch.cpp
-    ${NEX_SRC}/amd/commands/issue-token.cpp
-    ${NEX_SRC}/amd/commands/queue-push.cpp
-    ${NEX_SRC}/amd/commands/register-write.cpp
-    ${NEX_SRC}/amd/commands/tct-wait.cpp
-    ${NEX_SRC}/amd/programs/gemm.cpp
-    ${NEX_SRC}/amd/programs/rmsnorm.cpp
+    ${AMD_SRC}/command.cpp
+    ${AMD_SRC}/descriptor.cpp
+    ${AMD_SRC}/commands/block-write.cpp
+    ${AMD_SRC}/commands/ddr-patch.cpp
+    ${AMD_SRC}/commands/issue-token.cpp
+    ${AMD_SRC}/commands/queue-push.cpp
+    ${AMD_SRC}/commands/register-write.cpp
+    ${AMD_SRC}/commands/tct-wait.cpp
+    ${AMD_SRC}/programs/gemm.cpp
+    ${AMD_SRC}/programs/rmsnorm.cpp
 
-    ${NEX_SRC}/amd/device.cpp
-    ${NEX_SRC}/amd/operation.cpp
-    ${NEX_SRC}/amd/operation-registry.cpp
-    ${NEX_SRC}/amd/program-registry.cpp
+    ${AMD_SRC}/device.cpp
+    ${AMD_SRC}/operation.cpp
+    ${AMD_SRC}/operation-registry.cpp
+    ${AMD_SRC}/program-registry.cpp
 )
 
 # A program is lowered from a layer_description, which lives in the runtime's public include tree
@@ -59,6 +60,7 @@ file(WRITE "${NEX_API_STUB}/cmn-api.hpp" "#pragma once\n\n// Written by hwtest/C
 
 target_include_directories(nex-hwtest PRIVATE
     ${NEX_SRC}
+    ${NEX_SRC}/backend                                 # 즉 "amd/command.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../lnpu-nex/include"  # layer_description, 즉 무엇을 내릴지
     ${NEX_API_STUB}
     "${CMAKE_CURRENT_SOURCE_DIR}/../lnpu-cmn/include"  # operation-registry 가 cmn/containers 를 쓴다

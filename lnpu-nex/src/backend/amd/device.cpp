@@ -13,6 +13,11 @@ device::device(int device_id)
 {
 }
 
+network::shared
+device::create_network(std::string_view name, network_description::shared description)
+{
+}
+
 std::error_code
 device::load_op(std::string_view key, xrt::xclbin&& binary)
 {

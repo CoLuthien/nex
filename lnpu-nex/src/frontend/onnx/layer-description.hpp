@@ -33,8 +33,8 @@ public:
         layer_schema const* schema = nullptr;
 
         /// One entry per operand the node lists, null where it left an optional one out.
-        std::vector<value_description const*> operands;
-        std::vector<value_description const*> results;
+        std::vector<value_description> operands;
+        std::vector<value_description> results;
 
         std::vector<attribute>       attributes;
         std::vector<encoded::shared> parameters;
@@ -80,8 +80,8 @@ private:
 
     layer_schema const* m_schema;
 
-    std::vector<value_description const*> m_operands;
-    std::vector<value_description const*> m_results;
+    std::vector<value_description> m_operands;
+    std::vector<value_description> m_results;
 
     std::vector<attribute>       m_attributes;
     std::vector<encoded::shared> m_parameters;

@@ -216,7 +216,11 @@ rmsnorm::buffer_descriptors_used() const
 std::vector<binding>
 rmsnorm::bindings() const
 {
-    if (m_design.weighted) return {m_param.input, m_param.weight, m_param.output};
+    if (m_design.weighted)
+    {
+        return {m_param.input, m_param.weight, m_param.output};
+    }
+
     return {m_param.input, m_param.output};
 }
 

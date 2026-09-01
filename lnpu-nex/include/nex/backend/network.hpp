@@ -28,22 +28,12 @@ public:
     virtual bool has_output(std::string_view name) const = 0;
 };
 
-class network : public io_contract
+class executor : public io_contract
 {
 public:
-    using shared = std::shared_ptr<network>;
-    class instance;
+    using unique = std::unique_ptr<executor>;
 
-    ~network() override = default;
-
-    virtual std::string_view          name() const                 = 0;
-    virtual std::unique_ptr<instance> prepare(std::error_code& ec) = 0;
-};
-
-class network::instance : public io_contract
-{
-public:
-    ~instance() override = default;
+    ~executor() override = default;
 
     virtual std::error_code execute() = 0;
 
@@ -53,4 +43,16 @@ public:
     virtual std::error_code reset_input(std::string_view key)  = 0;
     virtual std::error_code reset_output(std::string_view key) = 0;
 };
+
+class network : public io_contract
+{
+public:
+    using shared = std::shared_ptr<network>;
+
+    ~network() override = default;
+
+    virtual std::string_view name() const                 = 0;
+    virtual executor::unique prepare(std::error_code& ec) = 0;
+};
+
 } // namespace lnpu::nex

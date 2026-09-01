@@ -1,10 +1,9 @@
 
 #pragma once
 
+#include "operation.hpp"
+
 #include "backend/layer.hpp"
-
-#include "amd/operation.hpp"
-
 #include "nex/frontend/layer-description.hpp"
 
 #include <cstddef>
@@ -58,8 +57,6 @@ class layer final : public nex::layer
     std::size_t          m_bound{};
 
 public:
-    using unique = std::unique_ptr<layer>;
-
     /**
      * @brief Pairs a lowered executable with the description it was lowered from.
      *
@@ -70,6 +67,9 @@ public:
      */
     layer(layer_description const& description, operation::executable::unique executable);
     ~layer() override = default;
+
+    static layer::unique create(layer_description const&      description,
+                                operation::executable::unique exec);
 
     std::error_code execute() override;
 

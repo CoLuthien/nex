@@ -11,9 +11,9 @@ namespace
 
 /// The name of a value, or nothing at all for an optional operand the node left out.
 std::string_view
-name_of(value_description const* value)
+name_of(value_description const& value)
 {
-    return value != nullptr ? std::string_view{value->name} : std::string_view{};
+    return value.name;
 }
 
 template <typename T>
@@ -84,23 +84,23 @@ nx_layer::output_name(std::size_t index) const
 value_description const*
 nx_layer::input(std::size_t index) const
 {
-    return at(m_operands, index, "operand");
+    return &at(m_operands, index, "operand");
 }
 
 value_description const*
 nx_layer::output(std::size_t index) const
 {
-    return at(m_results, index, "result");
+    return &at(m_results, index, "result");
 }
 
 value_description const*
 nx_layer::input(std::string_view name) const
 {
-    for (auto const* operand : m_operands)
+    for (auto const& operand : m_operands)
     {
         if (name_of(operand) == name)
         {
-            return operand;
+            return &operand;
         }
     }
 
@@ -110,11 +110,11 @@ nx_layer::input(std::string_view name) const
 value_description const*
 nx_layer::output(std::string_view name) const
 {
-    for (auto const* result : m_results)
+    for (auto const& result : m_results)
     {
         if (name_of(result) == name)
         {
-            return result;
+            return &result;
         }
     }
 

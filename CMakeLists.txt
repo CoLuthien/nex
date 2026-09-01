@@ -27,3 +27,5 @@ include(compile-options)
 
 add_subdirectory(lnpu-cmn)
 add_subdirectory(lnpu-nex)
+
+add_subdirectory(samples)

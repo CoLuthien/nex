@@ -173,8 +173,8 @@ private:
     void collect_values(::onnx::GraphProto const& graph);
     void collect_layers(::onnx::ModelProto const& model);
 
-    std::vector<value_description const*> resolve(name_list const& names) const;
-    std::vector<encoded::shared>          weights_of(name_list const& names) const;
+    std::vector<value_description> resolve(name_list const& names) const;
+    std::vector<encoded::shared>   weights_of(name_list const& names) const;
 
     nx_network::contents   m_parts{};
     decode::external_files m_externals{};
@@ -319,10 +319,10 @@ graph_reader::collect_values(::onnx::GraphProto const& graph)
     }
 }
 
-std::vector<value_description const*>
+std::vector<value_description>
 graph_reader::resolve(name_list const& names) const
 {
-    std::vector<value_description const*> resolved{};
+    std::vector<value_description> resolved{};
     resolved.reserve(static_cast<std::size_t>(names.size()));
 
     for (auto const& name : names)
@@ -341,7 +341,7 @@ graph_reader::resolve(name_list const& names) const
                                    "', which the graph never mentions");
         }
 
-        resolved.emplace_back(&m_parts.values[found->second]);
+        resolved.emplace_back(m_parts.values[found->second]);
     }
 
     return resolved;

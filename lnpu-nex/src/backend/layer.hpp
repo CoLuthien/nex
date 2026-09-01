@@ -12,6 +12,7 @@ namespace lnpu::nex
 class layer
 {
 public:
+    using unique     = std::unique_ptr<layer>;
     virtual ~layer() = default;
 
     virtual std::error_code set_input(std::string_view key, encoded::shared target)  = 0;

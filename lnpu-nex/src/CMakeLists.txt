@@ -30,10 +30,6 @@ PRIVATE
 
 add_subdirectory(frontend/onnx)
 
-if (LNPU_WITH_AMD_NPU)
-    add_subdirectory(amd)
-endif ()
-
 # After the vendor directories: what lives here implements the backend interfaces on top of them,
 # so it is compiled once the target it is folded into has its SDKs.
 add_subdirectory(backend)

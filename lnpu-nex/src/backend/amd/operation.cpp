@@ -174,15 +174,18 @@ operation::create_instance(layer_description::shared description, std::error_cod
     // The names go with the stream from here on. This is the last point at which anything knows
     // both which tensor is which and which argument carries it -- the program and the layer
     // description are both let go on the way out.
-    return std::make_unique<operation::executable>(
-        m_kernel_name, m_operation_context, std::move(sequence), program->bindings());
+    return std::make_unique<operation::executable>(m_kernel_name,
+                                                   m_operation_context,
+                                                   std::move(sequence), //
+                                                   program->bindings());
 }
 
 std::unique_ptr<operation::executable>
 operation::create_instance(command_list::unique commands)
 {
-    return std::make_unique<operation::executable>(
-        m_kernel_name, m_operation_context, std::move(commands));
+    return std::make_unique<operation::executable>(m_kernel_name, //
+                                                   m_operation_context,
+                                                   std::move(commands));
 }
 
 operation::executable::executable(std::string                      kernel_name,
