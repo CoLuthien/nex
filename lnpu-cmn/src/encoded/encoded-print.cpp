@@ -85,9 +85,9 @@ struct region
 /**
  * @brief Byte distance from element zero to @p indices.
  *
- * The layout's own offset is deliberately not applied: both encoded and encoded::slice hand out a
- * pointer that already stands at their element zero, displacement being carried by the buffer --
- * the same contract strided-copy.hpp works under.
+ * Nothing is added for where the region sits: both encoded and encoded::slice hand out a pointer
+ * that already stands at their element zero, displacement being carried by the buffer -- the same
+ * contract strided-copy.hpp works under.
  */
 std::size_t
 byte_offset(region const& of, std::vector<std::size_t> const& indices)

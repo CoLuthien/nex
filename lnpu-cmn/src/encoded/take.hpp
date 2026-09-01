@@ -16,7 +16,7 @@ namespace lnpu::detail
  *
  * Per the layout contract of strided_copy_bytes(), the displacement of the sub-region is carried
  * by the buffer rather than by the layout: the returned slice holds a buffer::view anchored at
- * its first element, and its layout keeps offset 0.
+ * its first element, and its layout states extents and strides only.
  *
  * A per-channel quantization follows the sub-region: when the bounds narrow its channel axis, the
  * slice is given the scale / zero_point entries of the channels it kept -- as views onto the

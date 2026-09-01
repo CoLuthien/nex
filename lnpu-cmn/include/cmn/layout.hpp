@@ -30,15 +30,16 @@ public:
     explicit layout(shape_container shape);
     layout(std::initializer_list<extent_type> shape); // non-explicit: allow `Layout l = {2, 3};`
 
-    // strides/offset are both in ELEMENT units.
-    layout(shape_container shape, stride_container strides, std::size_t offset);
+    // Strides are in ELEMENT units. Where the elements sit within a larger allocation is not
+    // stated here: displacement is carried by the buffer, which is what lets one layout describe
+    // a region and any view of it alike.
+    layout(shape_container shape, stride_container strides);
 
     [[nodiscard]] rank_type   rank() const noexcept { return m_shape.size(); }
     [[nodiscard]] std::size_t element_count() const noexcept;
 
     [[nodiscard]] extent_type extent(rank_type dim) const { return m_shape[dim]; }
     [[nodiscard]] extent_type stride(rank_type dim) const { return m_strides[dim]; }
-    [[nodiscard]] std::size_t offset() const noexcept { return m_offset; } // in ELEMENTS
 
     [[nodiscard]] const shape_container&  shape() const noexcept { return m_shape; }
     [[nodiscard]] const stride_container& strides() const noexcept { return m_strides; }
@@ -58,7 +59,6 @@ private:
     // member variables
     shape_container  m_shape;
     stride_container m_strides;
-    std::size_t      m_offset = 0; // in ELEMENTS (same unit as strides)
 };
 
 } // namespace lnpu

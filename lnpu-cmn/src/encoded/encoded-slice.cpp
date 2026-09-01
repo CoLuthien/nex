@@ -32,8 +32,8 @@ encoded::slice::take(layout_type::shape_container const& to)
     return detail::take(m_format, m_buffer, layout_type::shape_container(to.size(), 0), to);
 }
 
-// The buffer is a view anchored at this slice's first element, so no offset is applied here --
-// see the layout contract in strided-copy.hpp.
+// The buffer is a view anchored at this slice's first element, so there is nothing to displace
+// here -- see the layout contract in strided-copy.hpp.
 std::byte*
 encoded::slice::ptr()
 {

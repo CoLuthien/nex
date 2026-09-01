@@ -19,6 +19,7 @@ class CMN_EXPORT encoded final
 {
 
 public:
+    using weak        = std::weak_ptr<encoded>;
     using shared      = std::shared_ptr<encoded>;
     using unique      = std::unique_ptr<encoded>;
     using layout_type = lnpu::layout;
@@ -177,8 +178,8 @@ public:
      * @brief Gives the region a new shape within the one it was built with, keeping every element
      *        both shapes have room for at the same logical coordinate.
      *
-     * Only the SHAPE of @p layout is read: the region is handed back densely laid out (C-order,
-     * no offset), and @p compaction is what moves the elements into it. Pass false when the
+     * Only the SHAPE of @p layout is read: the region is handed back densely laid out (C-order),
+     * and @p compaction is what moves the elements into it. Pass false when the
      * contents are about to be overwritten anyway -- nothing is moved then, and what the bytes
      * mean under the new shape is the caller's business.
      *

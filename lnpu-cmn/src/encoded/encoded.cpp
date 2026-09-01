@@ -123,7 +123,7 @@ take(encoded::format const&         parent,
         span += static_cast<std::size_t>(shape[d] - 1) * stride;
     }
 
-    auto sliced = lnpu::layout{std::move(shape), source.strides(), 0};
+    auto sliced = lnpu::layout{std::move(shape), source.strides()};
 
     // An empty sub-region has no first element to anchor at; leaving it on the parent's base
     // keeps the view inside the allocation, and nothing may be dereferenced through it anyway.
@@ -508,7 +508,7 @@ encoded::compact_inplace(layout_type::shape_container const& from,
         auto const dense = lnpu::layout{retained};
 
         detail::strided_copy_bytes(m_buffer->ptr(),
-                                   lnpu::layout{retained, source.strides(), 0},
+                                   lnpu::layout{retained, source.strides()},
                                    scratch->ptr(),
                                    dense,
                                    m_format.encoding);
@@ -516,7 +516,7 @@ encoded::compact_inplace(layout_type::shape_container const& from,
         detail::strided_copy_bytes(scratch->ptr(),
                                    dense,
                                    m_buffer->ptr(),
-                                   lnpu::layout{retained, target.strides(), 0},
+                                   lnpu::layout{retained, target.strides()},
                                    m_format.encoding);
         return;
     }

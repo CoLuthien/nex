@@ -19,16 +19,32 @@ layout::layout(std::initializer_list<extent_type> shape) : m_shape(shape)
     compute_strides();
 }
 
-layout::layout(shape_container shape, stride_container strides, std::size_t offset)
-    : m_shape(std::move(shape)),     //
-      m_strides(std::move(strides)), //
-      m_offset(offset)
-
+layout::layout(shape_container shape, stride_container strides)
+    : m_shape(std::move(shape)), //
+      m_strides(std::move(strides))
 {
     if (m_shape.size() != m_strides.size())
     {
         throw std::invalid_argument("Layout: rank mismatch between shape and strides");
     }
+}
+
+/*
+ * Declared with the class and used across the tree -- amd::layer asks it whether a buffer is
+ * shaped the way the graph said it would be -- so the definition belongs here rather than being
+ * left to whoever links it.
+ *
+ * Two layouts describing the same elements are the same layout: shape and strides both have to
+ * agree. Strides are compared rather than derived, because a strided view over the same shape
+ * addresses different memory. Where those elements sit is not part of this -- that belongs to the
+ * buffer -- so a region and a view anchored at its first element compare equal, which is what
+ * callers checking a buffer against a declared shape actually mean to ask.
+ */
+bool
+operator==(const layout& lhs, const layout& rhs)
+{
+    return lhs.m_shape == rhs.m_shape //
+           and lhs.m_strides == rhs.m_strides;
 }
 
 std::size_t
@@ -105,7 +121,7 @@ layout::to_string() const
     join(oss, m_shape);
     oss << "], strides=[";
     join(oss, m_strides);
-    oss << "], offset=" << m_offset << ", elements=" << element_count()
+    oss << "], elements=" << element_count()
         << ", contiguous=" << (is_contiguous() ? "true" : "false") << ")";
     return oss.str();
 }
