@@ -22,6 +22,8 @@ PRIVATE
     program-registry.cpp
     device.cpp
     command.cpp
+    layer.cpp
+    executor.cpp
 
     commands/block-write.cpp
     commands/ddr-patch.cpp

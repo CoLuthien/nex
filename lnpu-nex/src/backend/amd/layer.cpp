@@ -101,6 +101,12 @@ layer::layer(layer_description const& description, operation::executable::unique
     }
 }
 
+bool
+layer::takes(std::string_view key) const
+{
+    return m_slots.contains(key);
+}
+
 std::error_code
 layer::execute()
 {

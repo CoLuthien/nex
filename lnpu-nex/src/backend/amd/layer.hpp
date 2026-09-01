@@ -57,6 +57,10 @@ class layer final : public nex::layer
     std::size_t          m_bound{};
 
 public:
+    /// Narrower than nex::layer::unique, which it deliberately hides: create() really does build
+    /// one of these, and a caller that routes by takes() needs to keep hold of that.
+    using unique = std::unique_ptr<layer>;
+
     /**
      * @brief Pairs a lowered executable with the description it was lowered from.
      *
@@ -70,6 +74,15 @@ public:
 
     static layer::unique create(layer_description const&      description,
                                 operation::executable::unique exec);
+
+    /**
+     * @brief Whether @p key is one of the arguments this layer is driven by.
+     *
+     * A tensor the program resolved while lowering -- folded into the instruction stream rather
+     * than left as an operand -- names no slot here, and binding it would only be refused. Callers
+     * routing a graph by name ask this first so such a tensor never enters their tables.
+     */
+    [[nodiscard]] bool takes(std::string_view key) const;
 
     std::error_code execute() override;
 
