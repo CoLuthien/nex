@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include "nex-api.hpp"
+
 #include "cmn/numeric-types.hpp"
 #include "cmn/encoded/encoded.hpp"
 

@@ -3,6 +3,7 @@ include(GenerateExportHeader)
 
 add_library(lnpu_nex SHARED
     runtime.cpp
+    nex-utils.cpp
 )
 
 generate_export_header(lnpu_nex

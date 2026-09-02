@@ -26,11 +26,11 @@ namespace lnpu::nex::amd
  * and which layer writes one the caller wants back. Both tables are built while the layers are,
  * because that is where the graph is still being read.
  *
- * Only the boundary is routed. A value produced inside the graph and consumed inside it is
- * nobody's to set from here; the storage for those is planned separately and is not yet wired in,
- * so execute() will report unbound arguments until it is. Weights are neither -- they belong to
- * the network and never change, so they are bound once during construction and never appear as
- * something a caller is asked for.
+ * Only the boundary is routed. Everything else is settled during construction and never asked of a
+ * caller: weights belong to the network and do not change, and a value produced inside the graph
+ * and consumed inside it is given a window of one arena this plans for itself. Planning it here is
+ * deliberate but temporary -- what to do with the room a finished value leaves behind is a decision
+ * a caller may want to make, and this holds it only until there is somewhere better for it to live.
  */
 class executor : public nex::executor
 {
@@ -53,6 +53,15 @@ class executor : public nex::executor
     /// safe.
     std::map<std::string, std::vector<layer*>, std::less<>> m_entry;
     std::map<std::string, layer*, std::less<>>              m_exit;
+
+    /// One allocation behind every value the graph both produces and consumes. Held rather than
+    /// left to the windows cut from it: the windows would keep it alive anyway, but the arena is
+    /// the graph's own storage and reads better as such.
+    buffer::shared m_arena;
+
+    /// The interior values, each a window into #m_arena, bound to their producer and consumers at
+    /// construction. Kept because the driver resolves addresses through what these name.
+    std::vector<encoded::shared> m_interior;
 
 public:
     /**
@@ -95,6 +104,10 @@ private:
 
     /// Refuses a graph whose boundary is not reachable from any layer.
     void verify_boundary() const;
+
+    /// Sizes every value interior to the graph, packs them into one arena, and binds each layer to
+    /// its window of it.
+    void plan_interior(network_description const& description);
 };
 
 } // namespace lnpu::nex::amd
